@@ -5,13 +5,13 @@ import numpy as np
 
 class TestIntervalSelection:
 
-    x = np.array(list(range(5)))
+    x = np.array(range(5))
 
-    def test_interval_oo(self):
+    def test_interval_cc(self):
         i = Interval((0.0, 4.0), (True, True))        
         np.testing.assert_equal(i.in_selection(self.x), np.array([True, True, True, True, True]))
 
-    def test_interval_cc(self):
+    def test_interval_oo(self):
         i = Interval((0.0, 4.0), (False, False))        
         np.testing.assert_equal(i.in_selection(self.x), np.array([False, True, True, True, False]))
     
