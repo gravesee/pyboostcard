@@ -1,24 +1,27 @@
 from pyboostcard.selections import *
+from typing import List, Optional
 
-## a constraint is a selection mapped to a relative ordering and optional monotonicity
+## a constraint is a managed list of selections with other methods
+class Constraint:
+    """A constraint is a collection of selections"""
 
+    def __init__(self, *args: Selection):
+        if not all(isinstance(x, Selection) for x in args):
+            raise ValueError("All constraint arguments must be Mapping objects.")
+        self.selections: List[Selection] = list(args)
 
-class Mapping:
-
-    def __init__(self, selection: Selection, order: int, mono: int = 0):
-        self.selection = selection
-        self.order = order
-        self.mono = mono
-    
     def __repr__(self) -> str:
-        return f"{self.selection.__repr__():<20} => {{{self.order:>3}, {self.mono:.3}}}"
+        # call repr on all selections print heading
+        heading = [f"{'Selection':<{SELECTION_WIDTH}}|{'Order':^{ORDER_WIDTH}}|{'Mono':^{MONO_WIDTH}}"]
+        heading += [f"{'-'*SELECTION_WIDTH}|{'-'*ORDER_WIDTH}|{'-'*MONO_WIDTH}"]        
+        lines = heading + [str(sel) for sel in self.selections]
+        return "\n".join(["|" + line + "|" for line in lines])
 
 
 if __name__ == "__main__":
-    m1 = Mapping(Missing(), 1)
-    m2 = Mapping(Exception(-1), 2)
-    m3 = Mapping(Interval((0., 10.), (True, True)), 3, 1)
+    m1 = Missing()
+    m2 = Exception(-1)
+    m3 = Interval((0.0, 10.0), (True, True))
 
-    print(m1)
-    print(m2)
-    print(m3)
+    c1 = Constraint(m1, m2, m3)
+    print(c1)
