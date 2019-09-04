@@ -1,21 +1,26 @@
 from __future__ import annotations
+from pyboostcard.constants import *
+
 from typing import Dict, Type, Tuple, Union, Callable
 from collections import namedtuple
 from abc import ABC, abstractmethod
 import numpy as np
 
-## set width constants for printing
-SELECTION_WIDTH = 19
-ORDER_WIDTH = 5
-MONO_WIDTH = 5
 
 class Selection(ABC):
+
+    priority: int
+
     def __init__(self, order: int = 0):
         self.order = order
 
     @abstractmethod
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         pass
+
+    @property
+    def sort_value(self) -> Tuple[int, int]:
+        return self.priority, self.order
 
     def __repr__(self) -> str:
         return f"{self.order:^{ORDER_WIDTH}}|"
@@ -25,6 +30,8 @@ Bounds = namedtuple("Bounds", ["left", "right"])
 
 
 class Interval(Selection):
+
+    priority = 0
 
     charmap: Dict[Tuple[bool, bool], str] = {
         (False, False): "({}, {})",
@@ -47,12 +54,13 @@ class Interval(Selection):
         self.bounds = Bounds(*bounds)
         self.mono = mono
         self._repr = self.charmap[bounds]
+    
+    def __str__(self) -> str:
+        return self._repr.format(*self.values)
 
     def __repr__(self) -> str:
-        return f"{self._repr.format(*self.values):<{SELECTION_WIDTH}}|" + \
-            super().__repr__() + \
-                f"{self.mono:^{MONO_WIDTH}}"
-
+        return f"{self._repr.format(*self.values):<{SELECTION_WIDTH}}|" + super().__repr__() + f"{self.mono:^{MONO_WIDTH}}"
+        
     @property
     def mono(self) -> int:
         return self._mono
@@ -70,23 +78,29 @@ class Interval(Selection):
 
 
 class Exception(Selection):
+
+    priority = 1
+
     def __init__(self, value: Union[str, float, int], order: int = 0):
         super().__init__(order)
         self.value = value
 
     def __repr__(self) -> str:
-        return f"{self.value:<{SELECTION_WIDTH}}|" + super().__repr__() + " "*MONO_WIDTH
+        return f"{self.value:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return (x == self.value) & ~np.isnan(x)
 
 
 class Missing(Selection):
+
+    priority = 2
+
     def __init__(self, order: int = 0):
         super().__init__(order)
 
     def __repr__(self) -> str:
-        return f"{'Missing':<{SELECTION_WIDTH}}|" + super().__repr__() + " "*MONO_WIDTH
+        return f"{'Missing':<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return np.isnan(x)
