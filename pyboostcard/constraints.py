@@ -12,14 +12,13 @@ from itertools import tee
 #         pass
 
 def check_valid_intervals(selections: List[Interval]) -> None:
-    ## sort the ranges in ascending order by ll
+    ## sort the ranges in ascending order by ll and pair up (1,2), (2,3), (3,4), etc...
     a, b = tee(sorted(selections, key=attrgetter("values")), 2)
     next(b)
     for prev, curr in zip(a, b):
-        if ((prev.values[1] == curr.values[0]) and (prev.bounds.right == curr.bounds.left)) or \
-            (prev.values[1] != curr.values[0]) or \
-            (prev.values[1] > curr.values[0]):
-            raise ValueError(f"Disjoint or overlapping intervals: {str(prev)}, {str(curr)}")
+        ## subsequent boundaries must have the same value AND different types (open-closed or closed-open)
+        if not ((prev.values[1] == curr.values[0]) & (prev.bounds.right != curr.bounds.left)):
+            raise ValueError(f"Disjoint or overlapping intervals: {str(prev)}, {str(curr)}")            
     return None    
 
 
@@ -83,7 +82,7 @@ if __name__ == "__main__":
     m2 = Exception(-1, 1)
     m3 = Exception(-2, 2)
     m4 = Interval((0.0, 10.0), (True, True))
-    m5 = Interval((10.0, 20.0), (False, True))
+    m5 = Interval((10.0, 20.0), (True, True))
 
     c1 = Constraint(m1, m2, m3, m4, m5)
     c1.fit()
