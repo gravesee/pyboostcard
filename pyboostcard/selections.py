@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 
+MaskedInequality = Callable[[np.ndarray, float], np.ndarray]
+
 class Selection(ABC):
 
     priority: int
@@ -40,11 +42,11 @@ class Interval(Selection):
         (True, True): "[{}, {}]",
     }
 
-    testmap: Dict[Tuple[bool, bool], Callable[[np.ndarray, Tuple[float, float]], np.ndarray]] = {
-        (False, False): lambda x, b: (x > b[0]) & (x < b[1]),
-        (False, True): lambda x, b: (x > b[0]) & (x <= b[1]),
-        (True, False): lambda x, b: (x >= b[0]) & (x < b[1]),
-        (True, True): lambda x, b: (x >= b[0]) & (x <= b[1]),
+    testmap: Dict[Tuple[bool, bool], Tuple[MaskedInequality, MaskedInequality]] = {
+        (False, False): (np.ma.greater, np.ma.less),
+        (False, True): (np.ma.greater, np.ma.less_equal),
+        (True, False): (np.ma.greater_equal, np.ma.less),
+        (True, True): (np.ma.greater_equal, np.ma.less_equal),
     }
 
     def __init__(self, values: Tuple[float, float], bounds: Tuple[bool, bool], order: int = 0, mono: int = 0):
@@ -73,9 +75,10 @@ class Interval(Selection):
             self._mono = value
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
-        test = self.testmap[self.bounds]
-        return test(x, self.values)
-
+        z = np.ma.masked_invalid(x)
+        (ltest, rtest) = self.testmap[self.bounds]
+        return ltest(z, self.values[0]) & rtest(z, self.values[1])
+        
 
 class Exception(Selection):
 
