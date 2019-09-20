@@ -7,27 +7,18 @@ from operator import attrgetter
 import numpy as np
 from sklearn.utils import check_array
 from itertools import tee
-
-
-class FittedSelection:
-    """Store selection and the value it should map to after fitting"""
-
-    def __init__(self, selection: Selection, value: Optional[float] = None):
-        self.selection = selection
-        self.value = value
-
-    def transform(self, x: np.ndarray, result: np.ndarray) -> np.ndarray:
-        replace = x if self.value is None else self.value
-
-        # make sure to only update output vector where filter is true AND result == np.nan
-        f = self.selection.in_selection(x) & np.isnan(result)
-        return np.where(f, replace, result)
+import scipy as sp
 
 
 class Blueprint:
     """A collection of fitted selections that together produced columns for ML"""
 
-    def __init__(self, selections: List[FittedSelection], mono: Optional[int] = 0):
+    def __init__(self, selections: List[Selection], mono: Optional[int] = 0):
+        ## check they are all fitted
+        for sel in selections:
+            if not sel.fitted:
+                raise RuntimeError("Must fit selections before adding to blueprint.")
+
         self.selections = selections
         self.mono = mono
 
@@ -126,8 +117,10 @@ class Constraint:
             # current interval gets None value to signal pass-through predictions
             vals[pos] = None
 
-            blueprint = [FittedSelection(sel, val) for (sel, val) in zip(self.selections, vals)]
-            out.append(Blueprint(blueprint, mono))
+            for (sel, val) in zip(self.selections, vals):
+                sel.fit(val)
+
+            out.append(Blueprint(self.selections, mono))
 
         return out
 
@@ -142,7 +135,8 @@ class Constraint:
         else:
             tmp = []
             for sel, val in zip(self.selections, self.order()):
-                tmp.append(FittedSelection(sel, val))
+                sel.fit(val)
+                tmp.append(sel)
 
             self._blueprints += [Blueprint(tmp, None)]
 
@@ -162,6 +156,7 @@ class Constraint:
 
         monos = [x.mono if x.mono is not None else 0 for x in self._blueprints]
         out = np.hstack(out)
+
         if np.any(np.isnan(out)):
             raise RuntimeError("Not all values accounted for in constraint. np.nan found in transformed result.")
 
@@ -174,16 +169,49 @@ class Constraint:
 
 
 if __name__ == "__main__":
-    m1 = Missing()
-    m2 = Exception(-1, 2)
-    m3 = Exception(-2, 2)
-    m4 = Interval((0.0, 10.0), (True, True), order=3)
-    m5 = Interval((10.0, 21.0), (False, True), order=1)
-    
-    x = np.array([np.nan, -2, -1, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20])
+    # m1 = Missing()
+    # m2 = Exception(-1, 2)
+    # m3 = Exception(-2, 2)
+    # m4 = Interval((0.0, 10.0), (True, True), order=3)
+    # m5 = Interval((10.0, 21.0), (False, True), order=1)
+
+    x = np.array([np.nan, -2, -1, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 62, 80, 100])
+
+    # c1 = Constraint(m1, m2, m3, m4, m5)
+
+    m1 = Missing(order=0)
+    m2 = Exception(-1, order=2)
+    m3 = Interval((-2, 18), (True, True), 0, mono=1)
+    m4 = Interval((18, 62), (False, True), 1, mono=1)
+    m5 = Interval((62, 100), (False, True), 2, mono=1)
 
     c1 = Constraint(m1, m2, m3, m4, m5)
     tf, m = c1.transform(x)
 
-    print(m)
-    print(np.hstack([x.reshape(-1, 1), tf]))
+    ## need to test that this is working
+
+    import numpy as np
+
+    age = np.random.randint(5, 100, 1000)
+    probs = np.where(age >= 62, 0.30, np.where(age >= 18, 0.2, 0.1))
+    y = np.random.binomial(n=1, p=probs)
+
+    from xgboost import XGBClassifier
+
+    tf, m = c1.transform(age)
+
+    clf = XGBClassifier(
+        max_depth=1, n_estimators=100, monotone_constraints=tuple(m), learning_rate=0.1, min_child_weight=50
+    )
+    clf.fit(tf, y=y, verbose=True)
+
+    py = clf.predict_proba(data=tf)[:, 1]
+
+    import pandas as pd
+
+    plt = pd.DataFrame({"x": pd.Series(age), "y": py})
+
+    import seaborn as sns
+
+    sns.regplot(x="x", y="y", data=plt, logistic=True)
+    # plt.plot()
