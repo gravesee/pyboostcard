@@ -3,7 +3,7 @@ from pyboostcard.constants import *
 
 from typing import Dict, Type, Tuple, Union, Callable, Optional
 from collections import namedtuple
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractproperty
 import numpy as np
 import operator as op
 
@@ -24,27 +24,34 @@ class Selection(ABC):
         pass
 
     @property
-    def sort_value(self) -> Tuple[int, int]:
-        return self.priority, self.order
-    
-    @property
-    def fitted(self) -> bool:
-        return self.value != np.nan
-    
-    def fit(self, value: Optional[float]) -> None:
-        self.value = value
-    
-    def transform(self, x: np.ndarray, result: np.ndarray) -> np.ndarray:
-        replace = x if self.value is None else self.value
-        # make sure to only update output vector where filter is true AND result == np.nan
-        f = self.in_selection(x) & np.isnan(result)
-        return np.where(f, replace, result)
+    def sort_value(self) -> Tuple[int, int, float]:
+        return self.priority, self.order, -np.inf
 
     def __repr__(self) -> str:
         return f"{self.order:^{ORDER_WIDTH}}|"
 
 
 Bounds = namedtuple("Bounds", ["left", "right"])
+
+
+class FittedSelection:
+    def __init__(self, selection: Selection, value: Optional[float] = None):
+        self.selection = selection
+        self.value = value
+
+    def transform(self, x: np.ndarray, result: np.ndarray) -> np.ndarray:
+        replace = x if self.value is None else self.value
+        # make sure to only update output vector where filter is true AND result == np.nan
+        f = self.selection.in_selection(x) & np.isnan(result)
+        return np.where(f, replace, result)
+
+    @property
+    def sort_value(self) -> Tuple[float, float, float]:
+        return self.selection.sort_value
+
+    @property
+    def fitted(self) -> bool:
+        return self.value != np.nan
 
 
 class Interval(Selection):
@@ -82,6 +89,10 @@ class Interval(Selection):
         )
 
     @property
+    def sort_value(self) -> Tuple[int, int, float]:
+        return self.priority, self.order, self.values[0]
+
+    @property
     def mono(self) -> int:
         return self._mono
 
@@ -94,12 +105,13 @@ class Interval(Selection):
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         z = np.ma.masked_invalid(x)
-        (ltest, rtest) = self.testmap[self.bounds]
+        ltest, rtest = self.testmap[self.bounds]
         return ltest(z, self.values[0]) & rtest(z, self.values[1])
+
 
 class Exception(Selection):
 
-    priority = 2
+    priority = 1
 
     def __init__(self, exception: float, order: int = 0):
         super().__init__(order)
@@ -114,7 +126,7 @@ class Exception(Selection):
 
 class Missing(Selection):
 
-    priority = 3
+    priority = 2
 
     def __init__(self, order: int = 0):
         super().__init__(order)
@@ -124,6 +136,7 @@ class Missing(Selection):
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return np.isnan(x)
+
 
 if __name__ == "__main__":
     print(Interval((10.0, 20.0), (False, False)))

@@ -2,6 +2,7 @@ from pyboostcard.selections import *
 from pyboostcard.constants import *
 from pyboostcard.util import indices
 
+import copy
 from typing import List, Optional, Any, cast, Tuple, Iterable, cast
 from operator import attrgetter
 import numpy as np
@@ -13,13 +14,8 @@ import scipy as sp
 class Blueprint:
     """A collection of fitted selections that together produced columns for ML"""
 
-    def __init__(self, selections: List[Selection], mono: Optional[int] = 0):
-        ## check they are all fitted
-        for sel in selections:
-            if not sel.fitted:
-                raise RuntimeError("Must fit selections before adding to blueprint.")
-
-        self.selections = selections
+    def __init__(self, selections: List[FittedSelection], mono: Optional[int] = 0):
+        self.selections = sorted(selections, key=attrgetter("sort_value"))
         self.mono = mono
 
 
@@ -79,20 +75,21 @@ class Constraint:
 
     def order(self, desc: bool = False) -> List[int]:
         mul = -1 if desc else 1
-        return indices([x.order * mul for x in self.selections])
+        return [x.order * mul for x in self.selections]
 
     def __fit_interval(self, interval: Interval) -> List[Blueprint]:
 
         if interval.mono == 0:
-            monos = (1, -1)
+            monos: Tuple[int, ...] = (1, -1, 1, -1)
         elif interval.mono == 1:
             monos = (1, 1)
         else:
-            monos = (-1, 1)
+            monos = (-1, -1)
 
         out: List[Blueprint] = []
         for mi, mono in enumerate(monos):
             order = self.order(desc=False if mono == 1 else True)
+            # order = self.order()
             ll, ul = interval.values
 
             # need the index order of the current interval, not the original order
@@ -107,7 +104,7 @@ class Constraint:
                 if j < i:
                     vals.append(ll - 1 - (i - j))
                 elif j == i:
-                    if mi == 0:
+                    if mi % 2 == 0:
                         vals.append(ll - 1)
                     else:
                         vals.append(ul + 1)
@@ -117,10 +114,8 @@ class Constraint:
             # current interval gets None value to signal pass-through predictions
             vals[pos] = None
 
-            for (sel, val) in zip(self.selections, vals):
-                sel.fit(val)
-
-            out.append(Blueprint(self.selections, mono))
+            fs = [FittedSelection(sel, val) for sel, val in zip(self.selections, vals)]
+            out.append(Blueprint(fs, mono))
 
         return out
 
@@ -135,8 +130,7 @@ class Constraint:
         else:
             tmp = []
             for sel, val in zip(self.selections, self.order()):
-                sel.fit(val)
-                tmp.append(sel)
+                tmp.append(FittedSelection(sel, val))
 
             self._blueprints += [Blueprint(tmp, None)]
 
@@ -167,51 +161,3 @@ class Constraint:
         lines = HEADER + [repr(sel) for sel in self.selections]
         return "\n".join(["|" + line + "|" for line in lines])
 
-
-if __name__ == "__main__":
-    # m1 = Missing()
-    # m2 = Exception(-1, 2)
-    # m3 = Exception(-2, 2)
-    # m4 = Interval((0.0, 10.0), (True, True), order=3)
-    # m5 = Interval((10.0, 21.0), (False, True), order=1)
-
-    x = np.array([np.nan, -2, -1, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 62, 80, 100])
-
-    # c1 = Constraint(m1, m2, m3, m4, m5)
-
-    m1 = Missing(order=0)
-    m2 = Exception(-1, order=2)
-    m3 = Interval((-2, 18), (True, True), 0, mono=1)
-    m4 = Interval((18, 62), (False, True), 1, mono=1)
-    m5 = Interval((62, 100), (False, True), 2, mono=1)
-
-    c1 = Constraint(m1, m2, m3, m4, m5)
-    tf, m = c1.transform(x)
-
-    ## need to test that this is working
-
-    import numpy as np
-
-    age = np.random.randint(5, 100, 1000)
-    probs = np.where(age >= 62, 0.30, np.where(age >= 18, 0.2, 0.1))
-    y = np.random.binomial(n=1, p=probs)
-
-    from xgboost import XGBClassifier
-
-    tf, m = c1.transform(age)
-
-    clf = XGBClassifier(
-        max_depth=1, n_estimators=100, monotone_constraints=tuple(m), learning_rate=0.1, min_child_weight=50
-    )
-    clf.fit(tf, y=y, verbose=True)
-
-    py = clf.predict_proba(data=tf)[:, 1]
-
-    import pandas as pd
-
-    plt = pd.DataFrame({"x": pd.Series(age), "y": py})
-
-    import seaborn as sns
-
-    sns.regplot(x="x", y="y", data=plt, logistic=True)
-    # plt.plot()
