@@ -1,4 +1,6 @@
 *
+!pyboostcard
+!pyboostcard/*
 !.py
 !.txt
 !.gitignore
