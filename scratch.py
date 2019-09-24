@@ -1,4 +1,6 @@
 from pyboostcard.constraints import *
+from pyboostcard.decisionstump import *
+
 from typing import Tuple, List, Dict
 import numpy as np
 
@@ -26,7 +28,7 @@ from xgboost import XGBClassifier
 tf, m = c1.transform(age)
 
 clf = XGBClassifier(
-    max_depth=1, n_estimators=100, monotone_constraints=tuple(m), learning_rate=0.1, min_child_weight=10
+    max_depth=1, n_estimators=100, monotone_constraints=tuple(m), learning_rate=0.1, min_child_weight=5
 )
 clf.fit(tf, y=y, verbose=True)
 
@@ -41,46 +43,29 @@ import seaborn as sns
 sns.regplot(x="x", y="y", data=plt, logistic=True)
 
 ## function to get all of the features and splits of a tree as well as the final points
-clf.get_booster().dump_model("xgb_model.txt", with_stats=True)
-
-# read the contents of the file
-with open("xgb_model.txt", "r") as f:
-    txt_model = f.read()
-
-# print(txt_model)
-
-## regex to get feature #, threshold and leaf values
-import re
-
-# trying to extract all patterns like "[f2<2.45]"
-
-split_pattern = "\[f([0-9]+)<([0-9]+.*[0-9-e]*)\]"
-splits = list(map(lambda x: (int(x[0]), float(x[1])), re.findall(split_pattern, txt_model)))
-values = list(map(float, re.findall("leaf=(-{,1}[0-9]+.[0-9-e]+),", txt_model)))
 
 ## create class that returns predicted value based on stumps from xgboost model
 
+## function to split vars by which features they belong
+
 # splits
-class DecisionStump:
-    def __init__(self, features: List[Tuple[int, float]], values: List[Tuple[float, float]]):
-        ## aggregate tuples by feature and thresholds and sum values
-        fm: Dict[Tuple[int, float], Tuple[float, float]] = {}
 
-        ## split values into groups of two
-        values_ = list(zip(*(iter(values),) * 2))
 
-        for i, f in enumerate(features):
-            tmp = fm.get(f, (0.0, 0.0))
-            tmp = (tmp[0] + values_[i][0], tmp[1] + values_[i][1])
-            fm[f] = tmp
 
-        ## sort the keys and reindex
-        self._feature_map = {k: fm[k] for k in sorted(fm.keys())}
+# ds = DecisionStump(splits, values)
 
-    def transform(self, x: np.ndarray) -> np.ndarray:
-        out = np.zeros(x.shape[0])
+# vals = ds.transform(tf)
 
-        for (feature, threshold), (left, right) in self._feature_map.items():
-            out += np.where(x[:, feature] < threshold, left, right)
+# data = pd.DataFrame({'Age':age, 'y':vals})
 
-        return out
+# # get new dataset to predict
+# from sklearn.tree import DecisionTreeRegressor
+
+# dt = DecisionTreeRegressor(max_leaf_nodes=8)
+# dt.fit(data[['Age']], data['y'])
+
+# p = dt.predict(data[['Age']])
+
+# plt = pd.DataFrame({'x':data['Age'], 'y':p})
+# sns.regplot(data=plt, x='x', y='y', logistic=True)
+
