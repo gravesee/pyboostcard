@@ -39,10 +39,14 @@ class Constraint:
         """Return filtered list of a single, specified type"""
         return [x for x in selections if isinstance(x, type)]
 
-    def __init__(self, *args: Selection):
-        if not all(isinstance(x, Selection) for x in args):
-            raise ValueError("All constraint arguments must be Selection objects.")
+    def __init__(self, name: str, *args: Selection):
+        if not name:
+            raise ValueError("All constraints must have a name")
 
+        if not all(isinstance(x, Selection) for x in args):
+            raise ValueError("All args must be Selection objects.")
+
+        self.name = name
         self.selections = sorted(args, key=attrgetter("sort_value"), reverse=True)
         self._blueprints: List[Blueprint] = []
 
