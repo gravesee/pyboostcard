@@ -39,9 +39,9 @@ class Constraint:
         """Return filtered list of a single, specified type"""
         return [x for x in selections if isinstance(x, type)]
 
-    def __init__(self, name: str, *args: Selection):
+    def __init__(self, *args: Selection, name: Optional[str] = None):
         if not name:
-            raise ValueError("All constraints must have a name")
+            raise ValueError("Constraints must be named")
 
         if not all(isinstance(x, Selection) for x in args):
             raise ValueError("All args must be Selection objects.")
@@ -50,15 +50,19 @@ class Constraint:
         self.selections = sorted(args, key=attrgetter("sort_value"), reverse=True)
         self._blueprints: List[Blueprint] = []
 
+        # check if contains identity, if so, can only have one
+        if (len(self.filter_types(self.selections, Identity)) > 0) & (len(self.selections) > 1):
+            raise ValueError("Constraint with identity selection most be sole selector")
+
         # Check Missing Selections
         if len(self.filter_types(self.selections, Missing)) > 1:
             raise ValueError("Constraint arguments can only have 1 Missing selection.")
 
-        # Check Exception Selections
-        exceptions = cast(List[Exception], self.filter_types(self.selections, Exception))
-        vals = [e.value for e in exceptions]
+        # Check Override Selections
+        overrides = cast(List[Override], self.filter_types(self.selections, Override))
+        vals = [e.value for e in overrides]
         if len(set(vals)) != len(vals):
-            raise ValueError("Exception selections must have unique values.")
+            raise ValueError("Override selections must have unique values.")
 
         # Check Interval Selections
         if self.num_intervals > 0:
@@ -128,13 +132,17 @@ class Constraint:
 
         intervals = self.get_intervals()
 
+        # if intervals in constraints, have to do a lot of shuffluing
         if len(intervals) > 0:
             for interval in intervals:
-                self._blueprints += self.__fit_interval(interval)
-        else:
+                self._blueprints += self.__fit_interval(interval)                
+        else: # if no intervals, much simpler
             tmp = []
             for sel, val in zip(self.selections, self.order()):
-                tmp.append(FittedSelection(sel, val))
+                if isinstance(sel, Identity):
+                    tmp.append(FittedSelection(sel, None))
+                else:
+                    tmp.append(FittedSelection(sel, val))
 
             self._blueprints += [Blueprint(tmp, None)]
 

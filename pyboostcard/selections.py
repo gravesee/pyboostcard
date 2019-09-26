@@ -46,12 +46,29 @@ class FittedSelection:
         return np.where(f, replace, result)
 
     @property
-    def sort_value(self) -> Tuple[float, float, float]:
+    def sort_value(self) -> Tuple[int, int, float]:
         return self.selection.sort_value
 
     @property
     def fitted(self) -> bool:
         return self.value != np.nan
+
+
+class Identity(Selection):
+    """"Selection responsible for only passing through -- no constraint in other words"""
+
+    priority = 100
+
+    def __init__(self, order: int = 0):
+        self.order = 0
+        self.value: Optional[float] = None
+
+    def in_selection(self, x: np.ndarray) -> np.ndarray:
+        """Always return true for identity selections"""
+        return np.full_like(x, True, dtype="bool")
+
+    def __repr__(self) -> str:
+        return f"{self.order:^{ORDER_WIDTH}}|"
 
 
 class Interval(Selection):
@@ -109,19 +126,19 @@ class Interval(Selection):
         return ltest(z, self.values[0]) & rtest(z, self.values[1])
 
 
-class Exception(Selection):
+class Override(Selection):
 
     priority = 1
 
-    def __init__(self, exception: float, order: int = 0):
+    def __init__(self, override: float, order: int = 0):
         super().__init__(order)
-        self.exception = exception
+        self.override = override
 
     def __repr__(self) -> str:
-        return f"{self.exception:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
+        return f"{self.override:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
-        return (x == self.exception) & ~np.isnan(x)
+        return (x == self.override) & ~np.isnan(x)
 
 
 class Missing(Selection):
@@ -140,7 +157,7 @@ class Missing(Selection):
 
 if __name__ == "__main__":
     print(Interval((10.0, 20.0), (False, False)))
-    print(Exception(-1))
+    print(Override(-1))
     print(Missing())
 
     i = Interval((5.0, 7.0), (False, False))

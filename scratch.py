@@ -5,12 +5,12 @@ from typing import Tuple, List, Dict
 import numpy as np
 
 m1 = Missing(order=0)
-m2 = Exception(-1, order=4)
+m2 = Override(-1, order=4)
 m3 = Interval((0, 18), (True, True), 2, mono=0)
 m4 = Interval((18, 62), (False, True), 2, mono=0)
 m5 = Interval((62, 100), (False, True), 2, mono=0)
 
-c1 = Constraint(m1, m2, m3, m4, m5)
+c1 = Constraint("var1", m1, m2, m3, m4, m5)
 # tf, m = c1.transform(x)
 
 

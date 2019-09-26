@@ -6,7 +6,6 @@ import re
 
 # TODO: Clean this up
 
-
 def indices(l: List[int]) -> List[int]:
     """return sorted positions of elements in l"""
     seen: Set = set()
