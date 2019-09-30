@@ -73,4 +73,3 @@ class TestStaticMethods:
 
         m = Selection.from_json('{"type":"missing", "order":0}')
         assert m.__dict__ == Missing(0).__dict__
-fa
