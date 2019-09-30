@@ -1,15 +1,15 @@
 from __future__ import annotations
 from pyboostcard.constants import *
 
-from typing import Dict, Type, Tuple, Union, Callable, Optional
+from typing import Dict, Type, Tuple, Union, Callable, Optional, Any
 from collections import namedtuple
 from abc import ABC, abstractmethod, abstractproperty
 import numpy as np
 import operator as op
+import json
 
 
 Comparator = Callable[[np.ndarray, float], np.ndarray]
-
 
 class Selection(ABC):
 
@@ -18,6 +18,32 @@ class Selection(ABC):
     def __init__(self, order: int = 0):
         self.order = order
         self.value: Optional[float] = np.nan
+
+    @staticmethod
+    def bounds_from_string(chars: str) -> Tuple[bool, bool]:
+        m = {"[]": (True, True), "(]": (False, True), "[)": (True, False), "()": (False, False)}
+        out = m.get(chars, None)
+        if out is None:
+            raise ValueError(f"Bounds string not recognized: {chars}.")
+
+        return out
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> Selection:
+        if d["type"] == "interval":
+            out: Selection = Interval(d["values"], Selection.bounds_from_string(d["bounds"]), d["order"], d["mono"])
+        elif d["type"] == "override":
+            out = Override(d["override"], d["order"])
+        elif d["type"] == "missing":
+            out = Missing(d["order"])
+        else:
+            raise ValueError(f"Selection type, {d['type']}, not recognized.")
+
+        return out
+    
+    @staticmethod
+    def from_json(s: str) -> Selection:
+        return json.loads(s, object_hook=Selection.from_dict)
 
     @abstractmethod
     def in_selection(self, x: np.ndarray) -> np.ndarray:
@@ -55,7 +81,7 @@ class FittedSelection:
 
 
 class Identity(Selection):
-    """"Selection responsible for only passing through -- no constraint in other words"""
+    """Selection responsible for only passing through -- no constraint in other words"""
 
     priority = 100
 
@@ -92,7 +118,7 @@ class Interval(Selection):
     def __init__(self, values: Tuple[float, float], bounds: Tuple[bool, bool], order: int = 0, mono: int = 0):
         """Bounds are tuple of bools where each indicates closed boundary"""
         super().__init__(order)
-        self.values = sorted(values)
+        self.values = tuple(sorted(values))
         self.bounds = Bounds(*bounds)
         self.mono = mono
         self._repr = self.charmap[bounds]
@@ -156,11 +182,6 @@ class Missing(Selection):
 
 
 if __name__ == "__main__":
-    print(Interval((10.0, 20.0), (False, False)))
-    print(Override(-1))
-    print(Missing())
 
-    i = Interval((5.0, 7.0), (False, False))
-    x = np.array(list(range(10)))
-    print(i.in_selection(x))
-
+    i = Interval.from_json('{"type":"interval", "bounds":"[]", "values": [10.0, 20.0], "order":0, "mono":0}')
+    print(i)
