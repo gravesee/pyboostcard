@@ -4,13 +4,15 @@ from pyboostcard.decisionstump import DecisionStump
 from pyboostcard.constraints import *
 from pyboostcard import util
 
-from typing import Dict
+from typing import Dict, List
+import copy
 
 from xgboost.sklearn import XGBClassifier
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.tree._tree import Tree
 from sklearn.utils import check_consistent_length
 
 
@@ -23,7 +25,7 @@ class BaseBoostCard(BaseEstimator):
         gamma: float = 0.0,
         min_child_weight: int = 1,
         subsample: float = 1.0,
-        **kwargs,
+        max_leaf_nodes: int = 8,
     ) -> None:
 
         self.constraints = constraints
@@ -32,23 +34,9 @@ class BaseBoostCard(BaseEstimator):
         self.gamma = gamma
         self.min_child_weight = min_child_weight
         self.subsample = subsample
-        self.kwargs = kwargs
 
         self.max_leaf_nodes = max_leaf_nodes
         self.decision_stumps: List[DecisionStump] = []
-
-        params = self.kwargs.update(
-            {
-                "max_depth": 1,  # hard-coded
-                "objective": self.objective,
-                "eta": self.eta,
-                "gamma": self.gamma,
-                "min_child_weight": self.min_child_weight,
-                "subsample": self.subsample,
-            }
-        )
-
-        self.xgb = XGBClassifier(params)
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> BoostCardClassifier:
         check_consistent_length(X, y)
@@ -60,9 +48,22 @@ class BaseBoostCard(BaseEstimator):
             xs.append(_x)
             monos.append(_m)
 
-        lens: list[int] = [x.shape[1] for x in xs]
+        lens: List[int] = [x.shape[1] for x in xs]
 
-        self.xgb.set_params({"monotone_constraints": str(tuple(monos))})
+        self.xgb = XGBClassifier(
+            max_depth=1,  # hard-coded
+            objective=self.objective,
+            eta=self.eta,
+            gamma=self.gamma,
+            min_child_weight=self.min_child_weight,
+            subsample=self.subsample,
+            montone_costraints=str(tuple(monos)),
+        )
+
+        # decision tree is always a regressor because we are using xgboost output as y
+        clf = DecisionTreeRegressor(
+            min_samples_leaf=self.min_child_weight, max_leaf_nodes=self.max_leaf_nodes
+        )
 
         self.xgb.fit(np.concatenate(xs, axis=1), y)
 
@@ -71,12 +72,16 @@ class BaseBoostCard(BaseEstimator):
 
         for data in mod_data:
             self.decision_stumps.append(DecisionStump(data[0], data[1]))
-        
+
         # generate data for the decision trees
+        self._trees: List[Tree] = []
         for x, stump, constraint in zip(xs, self.decision_stumps, self.constraints):
             yhat = stump.transform(x)
-            self.clf.fit(X[[constraint.name]], yhat)        
-        
+            clf.fit(X[[constraint.name]], yhat)
+            self._trees.append(copy.deepcopy(clf.tree_))
+
+        ## now have fitted trees...do something with them
+
         return self
 
     def transform(self, data: pd.DataFrame) -> np.ndarray:
@@ -102,20 +107,17 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         subsample: float = 1.0,
         # tree params
         max_leaf_nodes: int = 8,
-        **kwargs,
     ) -> None:
 
         super().__init__(
             constraints=constraints,
-            objetive=objective,
+            objective=objective,
             eta=eta,
             gamma=gamma,
             min_child_weight=min_child_weight,
             subsample=subsample,
-            kwargs=kwargs,
+            max_leaf_nodes=max_leaf_nodes,
         )
-
-        self.clf = DecisionTreeClassifier(min_weight_fraction_leaf=min_child_weight, max_leaf_nodes=self.max_leaf_nodes)
 
 
 class BoostCardRegressor(BaseBoostCard, RegressorMixin):
@@ -130,18 +132,14 @@ class BoostCardRegressor(BaseBoostCard, RegressorMixin):
         subsample: float = 1.0,
         # tree params
         max_leaf_nodes: int = 8,
-        **kwargs,
     ) -> None:
 
         super().__init__(
             constraints=constraints,
-            objetive=objective,
+            objective=objective,
             eta=eta,
             gamma=gamma,
             min_child_weight=min_child_weight,
             subsample=subsample,
-            kwargs=kwargs,
         )
-
-        self.clf = DecisionTreeRegressor(min_weight_fraction_leaf=min_child_weight, max_leaf_nodes=self.max_leaf_nodes)
 

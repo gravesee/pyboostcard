@@ -1,6 +1,7 @@
-from typing import List, Set, Tuple, cast
+from typing import List, Set, Tuple, cast, Any
 from xgboost.sklearn import XGBClassifier
 from tempfile import mkstemp
+from sklearn.tree._tree import Tree
 import os
 import re
 
@@ -8,7 +9,7 @@ import re
 
 def indices(l: List[int]) -> List[int]:
     """return sorted positions of elements in l"""
-    seen: Set = set()
+    seen: Set[int] = set()
     uniq = [x for x in sorted(l) if x not in seen and not seen.add(x)]  # type: ignore
     lookup = {k: i for (i, k) in enumerate(uniq)}
     return [lookup[x] for x in l]
@@ -73,3 +74,11 @@ def split_xgb_outputs(clf: XGBClassifier, lens: List[int]) -> List[Tuple[List[Fe
         out.append(filter_lists_by_fid(ft, lv, var_ids))
 
     return out
+
+
+## functions to extract split boundaries and values from a decision tree
+def sklearn_tree_to_bins(tree: Tree) -> List[Tuple[float, float]]:
+    """given an sklearn tree, return a set of bin breaks and mapped values"""
+
+
+    pass

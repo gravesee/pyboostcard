@@ -3,7 +3,7 @@ from pyboostcard.constants import *
 from pyboostcard.util import indices
 
 import copy
-from typing import List, Optional, Any, cast, Tuple, Iterable, cast
+from typing import List, Optional, Any, cast, Tuple, Iterable, cast, Type
 from operator import attrgetter
 import numpy as np
 from sklearn.utils import check_array
@@ -168,8 +168,8 @@ class Constraint:
 
         return out, monos
 
-    def __repr__(self) -> str:
-        # call repr on all selections print heading
-        lines = HEADER + [repr(sel) for sel in self.selections]
-        return "\n".join(["|" + line + "|" for line in lines])
+    # def __repr__(self) -> str:
+    #     # call repr on all selections print heading
+    #     lines = HEADER + [repr(sel) for sel in self.selections]
+    #     return "\n".join(["|" + line + "|" for line in lines])
 
