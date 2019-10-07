@@ -2,8 +2,9 @@ from pyboostcard.constraints import *
 from pyboostcard.decisionstump import *
 from pyboostcard.boostcard import BoostCardClassifier
 
+from sklearn.tree._tree import Tree
 import pandas as pd
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, cast
 import numpy as np
 import copy
 
@@ -25,7 +26,7 @@ age[:100] = -1
 probs = np.where(age >= 62, 0.30, np.where(age >= 18, 0.2, 0.1))
 
 y = pd.Series(np.random.binomial(n=1, p=probs))
-df = pd.DataFrame({'Age':age})
+df = pd.DataFrame({"Age": age})
 
 bst = BoostCardClassifier(constraints=[c1])
 
@@ -56,38 +57,31 @@ srt = sorted(res, key=lambda x: x[0])
 ## go down tree and keep track of max/min thresh of each level
 ## output max/min/value at each leaf
 
-def recurse(tree, node, bounds = None, res = list()):
-    if tree.threshold[node] == -2:
-        result = list(bounds)
-        result.append(float(tree.value[node]))
-        res.append(tuple(result))
-        return
-        
-    if bounds is None:
-        bounds = (-np.inf, np.inf)
 
-    new_bounds = list(bounds)
-    # go left
-    if tree.children_left[node] != -1:
-        new_bounds[1] = tree.threshold[node]
-        recurse(tree, tree.children_left[node], tuple(new_bounds), res)        
-    
-    if tree.children_right[node] != -1:
-        new_bounds[0] = tree.threshold[node]
-        recurse(tree, tree.children_right[node], tuple(new_bounds), res)
-    
-def tree_to_splits(tree):
-    res = []
-    recurse(tree, 0, bounds=None, res=res)
-    return res
+def tree_to_splits(tree: Tree) -> List[Tuple[float, ...]]:
+    # inner function that recursively finds boundaries and final values
+    def recurse(
+    tree: Tree, node: int, bounds: Tuple[float, ...]=(-np.inf, np.inf), res: List[Tuple[float, ...]] = list()
+    ) -> None:
+        if tree.threshold[node] == -2:
+            res.append(tuple(bounds) + (float(tree.value[node]),))
+            return None
 
+        if tree.children_left[node] != -1:
+            recurse(tree, tree.children_left[node], (bounds[0], tree.threshold[node]), res)
 
+        if tree.children_right[node] != -1:
+            recurse(tree, tree.children_right[node], (tree.threshold[node], bounds[1]), res)
 
+    result: List[Tuple[float, ...]] = []
+    recurse(tree, 0, res=result)    
+    return result
 
 
 pd.Series(clf.predict(age.reshape(-1, 1))).value_counts()
 
 import graphviz
+
 dot_data = export_graphviz(clf)
 graph = graphviz.Source(dot_data)
 

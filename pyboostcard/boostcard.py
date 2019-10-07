@@ -4,7 +4,7 @@ from pyboostcard.decisionstump import DecisionStump
 from pyboostcard.constraints import *
 from pyboostcard import util
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import copy
 
 from xgboost.sklearn import XGBClassifier
@@ -14,6 +14,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.tree._tree import Tree
 from sklearn.utils import check_consistent_length
+from util import sklearn_tree_to_bins
 
 
 class BaseBoostCard(BaseEstimator):
@@ -76,11 +77,17 @@ class BaseBoostCard(BaseEstimator):
         # generate data for the decision trees
         self._trees: List[Tree] = []
         for x, stump, constraint in zip(xs, self.decision_stumps, self.constraints):
+            # TODO: loop over constraints, and treat each one differentlu
+            # each missing, override should get a single value assigned
+            # each interval should be transformed, nans filtered, and a tree fitted
+            # the final results of each interval should be combined into one 
             yhat = stump.transform(x)
             clf.fit(X[[constraint.name]], yhat)
-            self._trees.append(copy.deepcopy(clf.tree_))
+            self._trees.append(copy.deepcopy(clf.tree_))            
 
-        ## now have fitted trees...do something with them
+        # now have fitted trees...do something with them, like convert them to tuples of bins and values
+        # TODO: add the variable name as well... and move this to the loop above!
+        self._bins: List[Tuple[float, ...]] = [sklearn_tree_to_bins(t) for t in self._trees]
 
         return self
 

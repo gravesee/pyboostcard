@@ -2,10 +2,12 @@ from typing import List, Set, Tuple, cast, Any
 from xgboost.sklearn import XGBClassifier
 from tempfile import mkstemp
 from sklearn.tree._tree import Tree
+import numpy as np
 import os
 import re
 
 # TODO: Clean this up
+
 
 def indices(l: List[int]) -> List[int]:
     """return sorted positions of elements in l"""
@@ -76,9 +78,30 @@ def split_xgb_outputs(clf: XGBClassifier, lens: List[int]) -> List[Tuple[List[Fe
     return out
 
 
-## functions to extract split boundaries and values from a decision tree
-def sklearn_tree_to_bins(tree: Tree) -> List[Tuple[float, float]]:
-    """given an sklearn tree, return a set of bin breaks and mapped values"""
+def sklearn_tree_to_bins(tree: Tree) -> List[Tuple[float, ...]]:
+    """Given an sklearn tree, return tuples of lower/upper boundaries and predicted values"""
+    # inner function that recursively finds boundaries and final values
+    def recurse(
+        tree: Tree, node: int, bounds: Tuple[float, ...] = (-np.inf, np.inf), res: List[Tuple[float, ...]] = list()
+    ) -> None:
+        # base case: if leaf then return (left boundary, right boundary, value)
+        if tree.threshold[node] == -2:
+            res.append(tuple(bounds) + (float(tree.value[node]),))
+            return None
 
+        # if not leaf, recurse and update the left or right maximum bondary appropriately
+        if tree.children_left[node] != -1:
+            recurse(tree, tree.children_left[node], (bounds[0], tree.threshold[node]), res)
 
-    pass
+        if tree.children_right[node] != -1:
+            recurse(tree, tree.children_right[node], (tree.threshold[node], bounds[1]), res)
+
+    # initialize empty list to populate the result of the recursive tree walk
+    result: List[Tuple[float, ...]] = []
+    recurse(tree, 0, res=result)
+    return result
+
+def combine_lists_of_bins(*args: List[Tuple[float, ...]]) -> List[Tuple[float, ...]]:
+    """Combine separate lists of tuples representing bin boundaries"""
+    
+    # TODO: figure out this algorithm
