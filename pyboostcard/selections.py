@@ -4,7 +4,7 @@ from pyboostcard.constants import *
 from typing import Dict, Type, Tuple, Union, Callable, Optional, Any
 from collections import namedtuple
 from abc import ABC, abstractmethod, abstractproperty
-import numpy as np
+import numpy as np # type: ignore
 import operator as op
 import json
 
@@ -57,8 +57,8 @@ class Selection(ABC):
     def sort_value(self) -> Tuple[int, int, float]:
         return self.priority, self.order, -np.inf
 
-    # def __repr__(self) -> str:
-    #     return f"{self.order:^{ORDER_WIDTH}}|"
+    def __repr__(self) -> str:
+        return f"{self.order:^{ORDER_WIDTH}}|"
 
 
 Bounds = namedtuple("Bounds", ["left", "right"])
@@ -97,8 +97,8 @@ class Identity(Selection):
         """Always return true for identity selections"""
         return np.full_like(x, True, dtype="bool")
 
-    # def __repr__(self) -> str:
-    #     return f"{self.order:^{ORDER_WIDTH}}|"
+    def __repr__(self) -> str:
+        return f"{self.order:^{ORDER_WIDTH}}|"
 
 
 class Interval(Selection):
@@ -127,13 +127,13 @@ class Interval(Selection):
         self.mono = mono
         self._repr = self.charmap[bounds]
 
-    # def __str__(self) -> str:
-    #     return self._repr.format(*self.values)
+    def __str__(self) -> str:
+        return self._repr.format(*self.values)
 
-    # def __repr__(self) -> str:
-    #     return (
-    #         f"{self._repr.format(*self.values):<{SELECTION_WIDTH}}|" + super().__repr__() + f"{self.mono:^{MONO_WIDTH}}"
-    #     )
+    def __repr__(self) -> str:
+        return (
+            f"{self._repr.format(*self.values):<{SELECTION_WIDTH}}|" + super().__repr__() + f"{self.mono:^{MONO_WIDTH}}"
+        )
 
     @property
     def sort_value(self) -> Tuple[int, int, float]:
@@ -164,8 +164,8 @@ class Override(Selection):
         super().__init__(order)
         self.override = override
 
-    # def __repr__(self) -> str:
-    #     return f"{self.override:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
+    def __repr__(self) -> str:
+        return f"{self.override:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return (x == self.override) & ~np.isnan(x)
@@ -178,8 +178,8 @@ class Missing(Selection):
     def __init__(self, order: int = 0):
         super().__init__(order)
 
-    # def __repr__(self) -> str:
-    #     return f"{'Missing':<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
+    def __repr__(self) -> str:
+        return f"{'Missing':<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return np.isnan(x)

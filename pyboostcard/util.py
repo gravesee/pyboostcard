@@ -57,7 +57,7 @@ def filter_lists_by_fid(
 
 
 def lengths_to_indices(lens: List[int]) -> List[List[int]]:
-    """[2, 3, 2] -> [[0,1], [2,3,4], [,5,6]]"""
+    """[2, 3, 2] -> [[0,1], [2,3,4], [5,6]]"""
     out = []
     curr = 0
     for l in lens:
@@ -67,22 +67,25 @@ def lengths_to_indices(lens: List[int]) -> List[List[int]]:
 
 
 def split_xgb_outputs(clf: XGBClassifier, lens: List[int]) -> List[Tuple[List[Features], List[LeafValues]]]:
-    ft, lv = get_xgb_features_and_values(clf)
+    features, values = get_xgb_features_and_values(clf)
 
     ids = lengths_to_indices(lens)
 
     out = []
     for var_ids in ids:
-        out.append(filter_lists_by_fid(ft, lv, var_ids))
+        out.append(filter_lists_by_fid(features, values, var_ids))
 
     return out
 
 
-def sklearn_tree_to_bins(tree: Tree) -> List[Tuple[float, ...]]:
+def sklearn_tree_to_bins(tree: Tree, values: Tuple[float, ...]) -> List[Tuple[float, ...]]:
     """Given an sklearn tree, return tuples of lower/upper boundaries and predicted values"""
     # inner function that recursively finds boundaries and final values
     def recurse(
-        tree: Tree, node: int, bounds: Tuple[float, ...] = (-np.inf, np.inf), res: List[Tuple[float, ...]] = list()
+        tree: Tree,
+        node: int,
+        bounds: Tuple[float, ...],
+        res: List[Tuple[float, ...]] = list(),
     ) -> None:
         # base case: if leaf then return (left boundary, right boundary, value)
         if tree.threshold[node] == -2:
@@ -98,10 +101,17 @@ def sklearn_tree_to_bins(tree: Tree) -> List[Tuple[float, ...]]:
 
     # initialize empty list to populate the result of the recursive tree walk
     result: List[Tuple[float, ...]] = []
-    recurse(tree, 0, res=result)
+    recurse(tree, 0, bounds=values, res=result)
     return result
 
-def combine_lists_of_bins(*args: List[Tuple[float, ...]]) -> List[Tuple[float, ...]]:
-    """Combine separate lists of tuples representing bin boundaries"""
-    
-    # TODO: figure out this algorithm
+
+# def combine_lists_of_bins(*args: List[Tuple[float, ...]]) -> List[Tuple[float, ...]]:
+#     """Combine separate lists of tuples representing bin boundaries"""
+
+#     # TODO: figure out this algorithm
+#     # args is a list of lists of tuples of floats
+#     # each list of tuples goes from -np.inf to np.inf with some associated value
+
+#     # check that first position isn't nan
+
+#     pass

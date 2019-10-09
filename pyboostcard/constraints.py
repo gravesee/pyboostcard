@@ -81,6 +81,11 @@ class Constraint:
     def fitted(self) -> bool:
         return len(self._blueprints) > 0
 
+    # def order(self, mono: int = 1) -> List[int]:
+    #     if mono not in [-1, 1]:
+    #         raise RuntimeError(f"mono somehow set to invalid value: {mono}")
+    #     return [x.order * mono for x in self.selections]
+
     def order(self, desc: bool = False) -> List[int]:
         mul = -1 if desc else 1
         return [x.order * mul for x in self.selections]
@@ -95,9 +100,8 @@ class Constraint:
             monos = (-1, -1)
 
         out: List[Blueprint] = []
-        for mi, mono in enumerate(monos):
+        for mi, mono in enumerate(monos):            
             order = self.order(desc=False if mono == 1 else True)
-            # order = self.order()
             ll, ul = interval.values
 
             # need the index order of the current interval, not the original order
@@ -135,8 +139,8 @@ class Constraint:
         # if intervals in constraints, have to do a lot of shuffluing
         if len(intervals) > 0:
             for interval in intervals:
-                self._blueprints += self.__fit_interval(interval)                
-        else: # if no intervals, much simpler
+                self._blueprints += self.__fit_interval(interval)
+        else:  # if no intervals, much simpler
             tmp = []
             for sel, val in zip(self.selections, self.order()):
                 if isinstance(sel, Identity):
@@ -168,8 +172,8 @@ class Constraint:
 
         return out, monos
 
-    # def __repr__(self) -> str:
-    #     # call repr on all selections print heading
-    #     lines = HEADER + [repr(sel) for sel in self.selections]
-    #     return "\n".join(["|" + line + "|" for line in lines])
+    def __repr__(self) -> str:
+        # call repr on all selections print heading
+        lines = HEADER + [repr(sel) for sel in self.selections]
+        return "\n".join(["|" + line + "|" for line in lines])
 
