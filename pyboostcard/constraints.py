@@ -81,11 +81,6 @@ class Constraint:
     def fitted(self) -> bool:
         return len(self._blueprints) > 0
 
-    # def order(self, mono: int = 1) -> List[int]:
-    #     if mono not in [-1, 1]:
-    #         raise RuntimeError(f"mono somehow set to invalid value: {mono}")
-    #     return [x.order * mono for x in self.selections]
-
     def order(self, desc: bool = False) -> List[int]:
         mul = -1 if desc else 1
         return [x.order * mul for x in self.selections]
@@ -93,7 +88,7 @@ class Constraint:
     def __fit_interval(self, interval: Interval) -> List[Blueprint]:
 
         if interval.mono == 0:
-            monos: Tuple[int, ...] = (1, -1, 1, -1)
+            monos: Tuple[int, ...] = (1, 1, -1, -1)
         elif interval.mono == 1:
             monos = (1, 1)
         else:

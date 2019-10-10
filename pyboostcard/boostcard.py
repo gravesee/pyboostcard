@@ -23,7 +23,7 @@ class BaseBoostCard(BaseEstimator):
         self,
         constraints: List[Constraint],
         objective: str = "reg:squarederror",
-        eta: float = 0.3,
+        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
         subsample: float = 1.0,
@@ -32,7 +32,7 @@ class BaseBoostCard(BaseEstimator):
 
         self.constraints = constraints
         self.objective = objective
-        self.eta = eta
+        self.learning_rate = learning_rate
         self.gamma = gamma
         self.min_child_weight = min_child_weight
         self.subsample = subsample
@@ -59,17 +59,17 @@ class BaseBoostCard(BaseEstimator):
         self.xgb = self.xgboost(
             max_depth=1,  # hard-coded
             objective=self.objective,
-            eta=self.eta,
+            learning_rate=self.learning_rate,
             gamma=self.gamma,
             min_child_weight=self.min_child_weight,
             subsample=self.subsample,
-            monotone_costraints=str(tuple(monos))
+            monotone_constraints=str(tuple(monos)),
         )
+
+        self.xgb.fit(np.concatenate(xs, axis=1), y)
 
         # decision tree is always a regressor because we are using xgboost output as y
         clf = DecisionTreeRegressor(min_samples_leaf=self.min_child_weight, max_leaf_nodes=self.max_leaf_nodes)
-
-        self.xgb.fit(np.concatenate(xs, axis=1), y)
 
         ## dump the model and generate the decision stumps
         mod_data = util.split_xgb_outputs(self.xgb, lens)
@@ -130,7 +130,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         # xgb params
         constraints: List[Constraint],
         objective: str = "binary:logitraw",
-        eta: float = 0.3,
+        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
         subsample: float = 1.0,
@@ -141,7 +141,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         super().__init__(
             constraints=constraints,
             objective=objective,
-            eta=eta,
+            learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,
             subsample=subsample,
@@ -150,13 +150,14 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
 
         self.xgboost = XGBClassifier
 
+
 class BoostCardRegressor(BaseBoostCard, RegressorMixin):
     def __init__(
         self,
         # xgb params
         constraints: List[Constraint],
         objective: str = "reg:squarederror",
-        eta: float = 0.3,
+        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
         subsample: float = 1.0,
@@ -164,11 +165,10 @@ class BoostCardRegressor(BaseBoostCard, RegressorMixin):
         max_leaf_nodes: int = 8,
     ) -> None:
 
-
         super().__init__(
             constraints=constraints,
             objective=objective,
-            eta=eta,
+            learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,
             subsample=subsample,
