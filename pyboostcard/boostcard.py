@@ -7,7 +7,7 @@ import operator as op
 from functools import reduce
 from itertools import accumulate
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union, cast, Any
 import copy
 
 from xgboost.sklearn import XGBClassifier, XGBRegressor
@@ -18,12 +18,28 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.tree._tree import Tree
 from sklearn.utils import check_consistent_length
 
+import json
+
 
 class BaseBoostCard(BaseEstimator):
+    @staticmethod
+    def from_json(file: str) -> List[Constraint]:
+
+        with open(file) as f:
+            config = json.load(f)
+
+        constraints: List[Constraint] = []
+        for k, v in config.items():
+            sels = [Selection.from_dict(sel) for sel in v]
+            constraints.append(Constraint(*sels, name=k))
+
+        return constraints
+
     def __init__(
         self,
-        constraints: List[Constraint],
+        constraints: Union[str, List[Constraint]],
         objective: str = "reg:squarederror",
+        n_estimators: int = 100,
         learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
@@ -31,8 +47,13 @@ class BaseBoostCard(BaseEstimator):
         max_leaf_nodes: int = 8,
     ) -> None:
 
-        self.constraints = constraints
+        if isinstance(constraints, str):
+            self.constraints = BaseBoostCard.from_json(constraints)
+        else:
+            self.constraints = constraints
+
         self.objective = objective
+        self.n_estimators = n_estimators
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.min_child_weight = min_child_weight
@@ -43,7 +64,19 @@ class BaseBoostCard(BaseEstimator):
 
         self.xgboost = XGBRegressor
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> BoostCardClassifier:
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        sample_weight=None,
+        eval_set=None,
+        eval_metric=None,
+        early_stopping_rounds=None,
+        verbose=True,
+        xgb_model=None,
+        sample_weight_eval_set=None,
+        callbacks=None,
+    ) -> BaseBoostCard:
         check_consistent_length(X, y)
 
         ## transform featueres using the fitted constraints
@@ -56,10 +89,11 @@ class BaseBoostCard(BaseEstimator):
 
         # create list of number of cols produced for each feature
         lens: List[int] = [x.shape[1] for x in xs]
-        
+
         self.xgb = self.xgboost(
             max_depth=1,  # hard-coded
             objective=self.objective,
+            n_estimators=self.n_estimators,
             learning_rate=self.learning_rate,
             gamma=self.gamma,
             min_child_weight=self.min_child_weight,
@@ -67,7 +101,18 @@ class BaseBoostCard(BaseEstimator):
             monotone_constraints=str(tuple(monos)),
         )
 
-        self.xgb.fit(np.concatenate(xs, axis=1), y)
+        self.xgb.fit(
+            np.concatenate(xs, axis=1),
+            y,
+            sample_weight=sample_weight,
+            eval_set=eval_set,
+            eval_metric=eval_metric,
+            early_stopping_rounds=early_stopping_rounds,
+            verbose=verbose,
+            xgb_model=xgb_model,
+            sample_weight_eval_set=sample_weight_eval_set,
+            callbacks=callbacks,
+        )
 
         # decision tree is always a regressor because we are using xgboost output as y
         clf = DecisionTreeRegressor(min_samples_leaf=self.min_child_weight, max_leaf_nodes=self.max_leaf_nodes)
@@ -96,7 +141,7 @@ class BaseBoostCard(BaseEstimator):
                     tuples.append((np.nan, np.nan, float(stump.transform(_x, pos))))
                 # check if override
                 elif isinstance(sel, Override):
-                    
+
                     _x, _ = constraint.transform(np.array(sel.override).reshape(-1, 1))
                     tuples.append((np.nan, sel.override, float(stump.transform(_x, pos))))
                 # check if interval
@@ -118,12 +163,12 @@ class BaseBoostCard(BaseEstimator):
         return self
 
     def transform(self, data: pd.DataFrame) -> np.ndarray:
-        pass    
+        pass
 
     def fit_transform(self, data: pd.DataFrame) -> np.ndarray:
         pass
 
-    def decision_function(self, X: pd.DataFrame, columns: bool = False, order: str = 'F') -> np.ndarray:
+    def decision_function(self, X: pd.DataFrame, columns: bool = False, order: str = "F") -> np.ndarray:
         ## check that the names of the dataframe are found in self._bins
         diff = set(self._bins.keys()).difference(set(X.columns))
         if len(diff) > 0:
@@ -133,7 +178,7 @@ class BaseBoostCard(BaseEstimator):
         out: List[np.ndarray] = []
         for k, v in self._bins.items():
             x = X[k]
-            res = np.full_like(x,fill_value=np.nan, dtype='float')
+            res = np.full_like(x, fill_value=np.nan, dtype="float")
 
             # loop over the bin intervals (start, stop, value)
             # TODO: refactor this so it isn't just using un-named tuples
@@ -150,20 +195,21 @@ class BaseBoostCard(BaseEstimator):
                 else:
                     f = (x >= el[0]) & (x <= el[1])
                     res[f] = el[2]
-            
-            out.append(res) 
+
+            out.append(res)
 
         cols = np.hstack(out).reshape(-1, len(out), order=order)
-        
+
         if columns:
             return cols
         else:
-            # sum the columns and add the intercept ...
+            # sum the columns and add the intercept ... # TODO add intercept
+            # prob = util.sigmoid(np.sum(cols, axis=1))
+            # return np.hstack([1. - prob, prob])
             return np.sum(cols, axis=1)
-        
 
-    def predict(self, X: pd.DataFrame, columns: bool = False) -> np.ndarray:
-        raw_predictions = self.decision_function(X, columns)
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        raw_predictions = self.decision_function(X, False)
         pass
 
 
@@ -171,8 +217,9 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
     def __init__(
         self,
         # xgb params
-        constraints: List[Constraint],
+        constraints: Union[str, List[Constraint]],
         objective: str = "binary:logitraw",
+        n_estimators: int = 100,
         learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
@@ -184,6 +231,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         super().__init__(
             constraints=constraints,
             objective=objective,
+            n_estimators=n_estimators,
             learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,
@@ -193,13 +241,53 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
 
         self.xgboost = XGBClassifier
 
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        sample_weight=None,
+        eval_set=None,
+        eval_metric=None,
+        early_stopping_rounds=None,
+        verbose=True,
+        xgb_model=None,
+        sample_weight_eval_set=None,
+        callbacks=None,
+    ) -> BaseBoostCard:
+        self.classes_, y = np.unique(y, return_inverse=True)
+        return super().fit(
+            X,
+            y,
+            sample_weight=sample_weight,
+            eval_set=eval_set,
+            eval_metric=eval_metric,
+            early_stopping_rounds=early_stopping_rounds,
+            verbose=verbose,
+            xgb_model=xgb_model,
+            sample_weight_eval_set=sample_weight_eval_set,
+            callbacks=callbacks,
+        )
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        D = self.decision_function(X)
+        return self.classes_[np.where(D > 0, 1, 0)]
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        D = self.decision_function(X)
+        prob = util.sigmoid(D)
+        return np.hstack([1.0 - prob, prob])
+
+    def predict_log_proba(self, X: pd.DataFrame) -> np.ndarray:
+        return self.decision_function(X)
+
 
 class BoostCardRegressor(BaseBoostCard, RegressorMixin):
     def __init__(
         self,
         # xgb params
-        constraints: List[Constraint],
+        constraints: Union[str, List[Constraint]],
         objective: str = "reg:squarederror",
+        n_estimators: int = 100,
         learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
@@ -211,6 +299,7 @@ class BoostCardRegressor(BaseBoostCard, RegressorMixin):
         super().__init__(
             constraints=constraints,
             objective=objective,
+            n_estimators=n_estimators,
             learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,

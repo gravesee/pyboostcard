@@ -1,16 +1,17 @@
 from __future__ import annotations
 from pyboostcard.constants import *
 
-from typing import Dict, Type, Tuple, Union, Callable, Optional, Any
+from typing import Dict, Type, Tuple, Union, Callable, Optional, Any, cast
 from collections import namedtuple
 from abc import ABC, abstractmethod, abstractproperty
 import numpy as np # typing: ignore
 import operator as op
 import json
+import re
 
+np.warnings.filterwarnings('ignore')
 
 Comparator = Callable[[np.ndarray, float], np.ndarray]
-
 
 class Selection(ABC):
 
@@ -26,13 +27,33 @@ class Selection(ABC):
         out = m.get(chars, None)
         if out is None:
             raise ValueError(f"Bounds string not recognized: {chars}.")
-
         return out
+    
+    @staticmethod 
+    def interval_from_string(chars: str) -> Tuple[Tuple[float, float], Tuple[bool, bool]]:
+        bounds = re.sub("[^\[\(\]\)]", "", chars)
+        tmp = re.sub("[\[\(\]\)]", "", chars).split(",")
+        if len(tmp) != 2:
+            raise ValueError(f"Invalid specification for interval: {chars}")        
+        
+        ## convert to floats
+        vals = []
+        for v in tmp:
+            if v == 'inf':
+                vals.append(np.inf)
+            elif v == '-inf':
+                vals.append(-np.inf)
+            else:
+                vals.append(float(v))
+
+        values = cast(Tuple[float, float], tuple(vals))
+        return values, Selection.bounds_from_string(bounds)
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> Selection:
         if d["type"] == "interval":
-            out: Selection = Interval(d["values"], Selection.bounds_from_string(d["bounds"]), d["order"], d["mono"])
+            tmp = Selection.interval_from_string(d["values"])
+            out: Selection = Interval(tmp[0], tmp[1], d["order"], d["mono"])
         elif d["type"] == "override":
             out = Override(d["override"], d["order"])
         elif d["type"] == "missing":
@@ -189,3 +210,6 @@ if __name__ == "__main__":
 
     i = Interval.from_json('{"type":"interval", "bounds":"[]", "values": [10.0, 20.0], "order":0, "mono":0}')
     print(i)
+
+    res = Selection.interval_from_string("[20.0, 30, 40)")
+    print(res)

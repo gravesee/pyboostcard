@@ -1,7 +1,7 @@
 from pyboostcard.constraints import *
 from pyboostcard.decisionstump import *
-from pyboostcard.boostcard import BoostCardClassifier
-# import pyboostcard.util as util
+from pyboostcard.boostcard import *
+
 from xgboost.sklearn import XGBClassifier
 from sklearn.tree._tree import Tree
 import pandas as pd
@@ -19,11 +19,11 @@ y = df['Survived']
 
 ## create constraints, one for Age, one for Fare
 
-# c_age = Constraint(
-#     Missing(order=4),
-#     Override(override=24.0, order=0),
-#     Interval((0, 30), (True, True), 2, mono=-1),
-#     Interval((30, 100), (False, True), 1, mono=0), name='Age')
+c_age = Constraint(
+    Missing(order=4),
+    Override(override=24.0, order=0),
+    Interval((0, 30), (True, True), 2, mono=-1),
+    Interval((30, 100), (False, True), 1, mono=0), name='Age')
 
 x = np.array([np.nan, 24.0, 0, 30, 31, 100])
 
@@ -41,14 +41,40 @@ c2 = Constraint(
     name='Fare')
 
 bst = BoostCardClassifier(constraints=[c1,c2], min_child_weight=25)
+
+bst = BoostCardClassifier(constraints="config.json", min_child_weight=25)
 bst.fit(data, y)
 
 
-yhat = bst.decision_function(df, columns=True)
+bst.score(data, y.values)
+
+
+bst.predict(data)
+bst.predict_log_proba(data)
+bst.decision_function(data, columns=True)
+
+
+## does grid search work?
+from sklearn.model_selection import GridSearchCV
+
+parameters = {
+    'learning_rate': [0.01, 0.05, 0.1, 0.2],
+    'min_child_weight': [10, 25, 50]
+    }
+
+bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
+
+bst.fit(data, y, eval_metric='auc', verbose=True)
+
+
+# clf = GridSearchCV(bst, parameters, cv=5)
+# clf.fit(data, y)
+
+# yhat = clf.estimator.decision_function(data, columns=True)
 
 # sns.scatterplot(x=df['Age'], y=yhat[:,0])
 
-sns.scatterplot(x=df['Age'], y=yhat[:,0])
+# sns.scatterplot(x=df['Age'], y=yhat[:,0])
 # sns.scatterplot(x=df['Fare'], y=yhat[:,1])
 
 # d1 = clf.get_params()
@@ -111,3 +137,6 @@ sns.scatterplot(x=df['Age'], y=yhat[:,0])
 # # graph.render()
 
 # # # clf.predict(age.reshape(-1, 1))
+
+## debug nump warning
+# from numpy.

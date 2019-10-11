@@ -6,8 +6,6 @@ import numpy as np
 import os
 import re
 
-# TODO: Clean this up
-
 
 def indices(l: List[int]) -> List[int]:
     """return sorted positions of elements in l"""
@@ -81,12 +79,7 @@ def split_xgb_outputs(clf: XGBClassifier, lens: List[int]) -> List[Tuple[List[Fe
 def sklearn_tree_to_bins(tree: Tree, values: Tuple[float, ...]) -> List[Tuple[float, ...]]:
     """Given an sklearn tree, return tuples of lower/upper boundaries and predicted values"""
     # inner function that recursively finds boundaries and final values
-    def recurse(
-        tree: Tree,
-        node: int,
-        bounds: Tuple[float, ...],
-        res: List[Tuple[float, ...]] = list(),
-    ) -> None:
+    def recurse(tree: Tree, node: int, bounds: Tuple[float, ...], res: List[Tuple[float, ...]] = list()) -> None:
         # base case: if leaf then return (left boundary, right boundary, value)
         if tree.threshold[node] == -2:
             res.append(tuple(bounds) + (float(tree.value[node]),))
@@ -104,14 +97,5 @@ def sklearn_tree_to_bins(tree: Tree, values: Tuple[float, ...]) -> List[Tuple[fl
     recurse(tree, 0, bounds=values, res=result)
     return result
 
-
-# def combine_lists_of_bins(*args: List[Tuple[float, ...]]) -> List[Tuple[float, ...]]:
-#     """Combine separate lists of tuples representing bin boundaries"""
-
-#     # TODO: figure out this algorithm
-#     # args is a list of lists of tuples of floats
-#     # each list of tuples goes from -np.inf to np.inf with some associated value
-
-#     # check that first position isn't nan
-
-#     pass
+def sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1 / (1 + np.exp(-x))
