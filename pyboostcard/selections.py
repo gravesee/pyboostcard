@@ -4,7 +4,7 @@ from pyboostcard.constants import *
 from typing import Dict, Type, Tuple, Union, Callable, Optional, Any
 from collections import namedtuple
 from abc import ABC, abstractmethod, abstractproperty
-import numpy as np # type: ignore
+import numpy as np # typing: ignore
 import operator as op
 import json
 
