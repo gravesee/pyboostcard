@@ -15,10 +15,11 @@ class DecisionStump:
         ## sort the keys and reindex
         self._feature_map = {k: fm[k] for k in sorted(fm.keys())}
 
-    def transform(self, x: np.ndarray) -> np.ndarray:
+    def transform(self, x: np.ndarray, pos: int = 0) -> np.ndarray:
+        """pos accounts for the split matrix of features -- not all indexed from one"""
         out = np.zeros(x.shape[0])
 
         for (feature, threshold), (left, right) in self._feature_map.items():
-            out += np.where(x[:, feature] < threshold, left, right)
+            out += np.where(x[:, feature - pos] < threshold, left, right)
 
         return out

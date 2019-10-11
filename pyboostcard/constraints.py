@@ -15,7 +15,7 @@ class Blueprint:
     """A collection of fitted selections that together produced columns for ML"""
 
     def __init__(self, selections: List[FittedSelection], mono: Optional[int] = 0):
-        self.selections = sorted(selections, key=attrgetter("sort_value"))
+        self.selections = sorted(selections, key=attrgetter("sort_value"), reverse=True)
         self.mono = mono
 
 

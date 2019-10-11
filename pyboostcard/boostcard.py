@@ -5,6 +5,7 @@ from pyboostcard.constraints import *
 from pyboostcard import util
 import operator as op
 from functools import reduce
+from itertools import accumulate
 
 from typing import Dict, List, Tuple
 import copy
@@ -55,7 +56,7 @@ class BaseBoostCard(BaseEstimator):
 
         # create list of number of cols produced for each feature
         lens: List[int] = [x.shape[1] for x in xs]
-
+        
         self.xgb = self.xgboost(
             max_depth=1,  # hard-coded
             objective=self.objective,
@@ -79,7 +80,8 @@ class BaseBoostCard(BaseEstimator):
 
         # generate data for the decision trees
         self._trees: List[Tree] = []
-        self._bins: List[List[Tuple[float, ...]]] = []
+        self._bins: Dict[str, List[Tuple[float, ...]]] = {}
+        pos = 0
         for x, stump, constraint in zip(xs, self.decision_stumps, self.constraints):
 
             tuples: List[Tuple[float, ...]] = []
@@ -91,16 +93,17 @@ class BaseBoostCard(BaseEstimator):
                 # check if missing
                 if isinstance(sel, Missing):
                     _x, _ = constraint.transform(np.array(np.nan).reshape(-1, 1))
-                    tuples.append((np.nan, np.nan, float(stump.transform(_x))))
+                    tuples.append((np.nan, np.nan, float(stump.transform(_x, pos))))
                 # check if override
                 elif isinstance(sel, Override):
+                    
                     _x, _ = constraint.transform(np.array(sel.override).reshape(-1, 1))
-                    tuples.append((np.nan, sel.override, float(stump.transform(_x))))
+                    tuples.append((np.nan, sel.override, float(stump.transform(_x, pos))))
                 # check if interval
                 elif isinstance(sel, Interval):
                     # Push these to a separate list and combine them before
                     # adding them to the _bins list
-                    yhat = stump.transform(x)
+                    yhat = stump.transform(x, pos)
                     # filter X to only where it is in selection
                     f = sel.in_selection(X[[constraint.name]]).reshape(-1)
                     clf.fit(X[[constraint.name]][f], yhat[f])
@@ -109,18 +112,58 @@ class BaseBoostCard(BaseEstimator):
                 else:
                     pass
 
-            self._bins.append(tuples + sorted(intervals))
+            self._bins[constraint.name] = tuples + sorted(intervals)
+            pos += x.shape[1]
 
         return self
 
     def transform(self, data: pd.DataFrame) -> np.ndarray:
-        pass
+        pass    
 
     def fit_transform(self, data: pd.DataFrame) -> np.ndarray:
         pass
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        raw_predictions = self.decision_function()
+    def decision_function(self, X: pd.DataFrame, columns: bool = False, order: str = 'F') -> np.ndarray:
+        ## check that the names of the dataframe are found in self._bins
+        diff = set(self._bins.keys()).difference(set(X.columns))
+        if len(diff) > 0:
+            raise ValueError("Required columns not found in `X`: {diff}")
+
+        ## loop over each of the _bins
+        out: List[np.ndarray] = []
+        for k, v in self._bins.items():
+            x = X[k]
+            res = np.full_like(x,fill_value=np.nan, dtype='float')
+
+            # loop over the bin intervals (start, stop, value)
+            # TODO: refactor this so it isn't just using un-named tuples
+            for el in v:
+                # missing or override
+                if el[0] is np.nan:
+                    # missing
+                    if el[1] is np.nan:
+                        res[np.isnan(x)] = el[2]
+                    # override
+                    else:
+                        res[x == el[1]] = el[2]
+                # interval TODO: add bounds to the tuple and get comparison op here
+                else:
+                    f = (x >= el[0]) & (x <= el[1])
+                    res[f] = el[2]
+            
+            out.append(res) 
+
+        cols = np.hstack(out).reshape(-1, len(out), order=order)
+        
+        if columns:
+            return cols
+        else:
+            # sum the columns and add the intercept ...
+            return np.sum(cols, axis=1)
+        
+
+    def predict(self, X: pd.DataFrame, columns: bool = False) -> np.ndarray:
+        raw_predictions = self.decision_function(X, columns)
         pass
 
 

@@ -9,53 +9,47 @@ from typing import Tuple, List, Dict, cast
 import numpy as np
 import copy
 
-m1 = Missing(order=0)
-m2 = Override(-1, order=3)
-m3 = Interval((0, 50), (True, True), 2, mono=0)
-m4 = Interval((50, 100), (False, True), 3, mono=0)
-# m5 = Interval((18, 100), (False, True), 4, mono=1)
-
-c1 = Constraint(m1, m2, m3, m4, name="Age")
-#c1 = Constraint(m1, m2, m3, m4, m5, name="Age")
-
-x = np.array([np.nan, -1., 0, 50, 51, 100])
-
-tf, m = c1.transform(x)
-
-print(np.hstack([x.reshape(-1,1), tf]))
-
-## need to test that this is working
-
-age = np.random.randint(0, 100, 1000)
-age[:100] = -1
-probs = np.where(age >= 62, 0.80, np.where(age >= 18, 0.60, 0.55))
-
-y = pd.Series(np.random.binomial(n=1, p=probs))
-df = pd.DataFrame({"Age": age})
-
-# testing using just xgboost
-# x, m = c1.transform(age)
-# clf = XGBClassifier(min_child_weight=100, max_depth=1, learning_rate=0.1,
-#                     monotone_constraints='(1, 1, 1, 1, -1, -1)', objective='binary:logitraw')
-# x, _ = c1.transform(age)
-# clf.fit(x, y)
-# yhat = clf.predict_proba(x)[:,1]
-
-
 import seaborn as sns
-# sns.scatterplot(x=age, y=yhat)
+
+df = pd.read_csv("train.csv")
+
+k = ['Age','Fare']
+data = df[k]
+y = df['Survived']
+
+## create constraints, one for Age, one for Fare
+
+# c_age = Constraint(
+#     Missing(order=4),
+#     Override(override=24.0, order=0),
+#     Interval((0, 30), (True, True), 2, mono=-1),
+#     Interval((30, 100), (False, True), 1, mono=0), name='Age')
+
+x = np.array([np.nan, 24.0, 0, 30, 31, 100])
+
+print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
 
 
-# pd.DataFrame(np.hstack([age.reshape(-1,1), x])).iloc[:10,:]
+c1 =Constraint(
+    Missing(order=4),
+    Override(override=24.0, order=0),
+    Interval((0, 30), (True, True), 2, mono=-1),
+    Interval((30, 100), (False, True), 1, mono=0), name='Age')
 
-bst = BoostCardClassifier(constraints=[c1], min_child_weight=100, learning_rate=0.1)
+c2 = Constraint(
+    Interval((0, 1000), (True, True), 0, mono=1),
+    name='Fare')
 
-bst.fit(X=df, y=y)
-x, _ = c1.transform(age)
-yhat = bst.xgb.predict_proba(x)[:,1]
-sns.scatterplot(x=df['Age'], y=yhat)
+bst = BoostCardClassifier(constraints=[c1,c2], min_child_weight=25)
+bst.fit(data, y)
 
-bst.xgb
+
+yhat = bst.decision_function(df, columns=True)
+
+# sns.scatterplot(x=df['Age'], y=yhat[:,0])
+
+sns.scatterplot(x=df['Age'], y=yhat[:,0])
+# sns.scatterplot(x=df['Fare'], y=yhat[:,1])
 
 # d1 = clf.get_params()
 # d2 = bst.xgb.get_params()
