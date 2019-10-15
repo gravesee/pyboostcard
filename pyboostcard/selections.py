@@ -58,6 +58,8 @@ class Selection(ABC):
             out = Override(d["override"], d["order"])
         elif d["type"] == "missing":
             out = Missing(d["order"])
+        elif d["type"] == "identity":
+            out = Identity()
         else:
             raise ValueError(f"Selection type, {d['type']}, not recognized.")
 
@@ -77,13 +79,8 @@ class Selection(ABC):
     @property
     def sort_value(self) -> Tuple[int, int, float]:
         return self.priority, self.order, -np.inf
-
-    def __repr__(self) -> str:
-        return f"{self.order:^{ORDER_WIDTH}}|"
-
-
+    
 Bounds = namedtuple("Bounds", ["left", "right"])
-
 
 class FittedSelection:
     def __init__(self, selection: Selection, value: Optional[float] = None):
@@ -119,19 +116,12 @@ class Identity(Selection):
         return np.full_like(x, True, dtype="bool")
 
     def __repr__(self) -> str:
-        return f"{self.order:^{ORDER_WIDTH}}|"
+        return "I"
 
 
 class Interval(Selection):
 
     priority = 0
-
-    charmap: Dict[Tuple[bool, bool], str] = {
-        (False, False): "({}, {})",
-        (False, True): "({}, {}]",
-        (True, False): "[{}, {})",
-        (True, True): "[{}, {}]",
-    }
 
     testmap: Dict[Tuple[bool, bool], Tuple[Comparator, Comparator]] = {
         (False, False): (op.gt, op.lt),
@@ -146,15 +136,9 @@ class Interval(Selection):
         self.values = tuple(sorted(values))
         self.bounds = Bounds(*bounds)
         self.mono = mono
-        self._repr = self.charmap[bounds]
-
-    def __str__(self) -> str:
-        return self._repr.format(*self.values)
 
     def __repr__(self) -> str:
-        return (
-            f"{self._repr.format(*self.values):<{SELECTION_WIDTH}}|" + super().__repr__() + f"{self.mono:^{MONO_WIDTH}}"
-        )
+        return "i"
 
     @property
     def sort_value(self) -> Tuple[int, int, float]:
@@ -186,7 +170,7 @@ class Override(Selection):
         self.override = override
 
     def __repr__(self) -> str:
-        return f"{self.override:<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
+        return "O"
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return (x == self.override) & ~np.isnan(x)
@@ -200,7 +184,7 @@ class Missing(Selection):
         super().__init__(order)
 
     def __repr__(self) -> str:
-        return f"{'Missing':<{SELECTION_WIDTH}}|" + super().__repr__() + " " * MONO_WIDTH
+        return "M"
 
     def in_selection(self, x: np.ndarray) -> np.ndarray:
         return np.isnan(x)

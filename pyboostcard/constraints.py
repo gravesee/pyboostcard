@@ -169,6 +169,5 @@ class Constraint:
 
     def __repr__(self) -> str:
         # call repr on all selections print heading
-        lines = HEADER + [repr(sel) for sel in self.selections]
-        return "\n".join(["|" + line + "|" for line in lines])
-
+        sels = ",".join([str(x) for x in self.selections])
+        return self.name + f"=[{sels}]"

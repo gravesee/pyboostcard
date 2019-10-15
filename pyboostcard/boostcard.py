@@ -13,12 +13,21 @@ import copy
 from xgboost.sklearn import XGBClassifier, XGBRegressor
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.base import (
+    BaseEstimator,
+    ClassifierMixin,
+    RegressorMixin,
+    TransformerMixin,
+)
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.tree._tree import Tree
 from sklearn.utils import check_consistent_length
 
+
 import json
+
+
+## TODO: implement preprocess mixin
 
 
 class BaseBoostCard(BaseEstimator):
@@ -64,11 +73,11 @@ class BaseBoostCard(BaseEstimator):
 
         self.xgboost = XGBRegressor
 
-    def fit(
+    def fit(  # type: ignore
         self,
         X: pd.DataFrame,
         y: pd.Series,
-        sample_weight=None,
+        sample_weight: Optional[pd.Series] = None,
         eval_set=None,
         eval_metric=None,
         early_stopping_rounds=None,
@@ -79,16 +88,18 @@ class BaseBoostCard(BaseEstimator):
     ) -> BaseBoostCard:
         check_consistent_length(X, y)
 
-        ## transform featueres using the fitted constraints
-        xs: List[np.ndarray] = []
-        monos: List[int] = []
-        for constraint in self.constraints:
-            data, mono = constraint.transform(X[[constraint.name]])
-            xs.append(data)
-            monos += mono
+        # transform input data through constraints
+        xs, monos, lens = self.transform(X)
 
-        # create list of number of cols produced for each feature
-        lens: List[int] = [x.shape[1] for x in xs]
+        # # do the same for the eval sets
+        # if eval_set is not None:
+        #     evals: Optional[List[Tuple[np.ndarray, np.ndarray]]] = []
+        #     for (data, target) in eval_set:
+        #         x_ = np.concatenate(self.transform(data)[0], axis=1)
+        #         if evals is not None:
+        #             evals.append((x_, target))
+        # else:
+        #     evals = None
 
         self.xgb = self.xgboost(
             max_depth=1,  # hard-coded
@@ -115,7 +126,9 @@ class BaseBoostCard(BaseEstimator):
         )
 
         # decision tree is always a regressor because we are using xgboost output as y
-        clf = DecisionTreeRegressor(min_samples_leaf=self.min_child_weight, max_leaf_nodes=self.max_leaf_nodes)
+        clf = DecisionTreeRegressor(
+            min_samples_leaf=self.min_child_weight, max_leaf_nodes=self.max_leaf_nodes
+        )
 
         ## dump the model and generate the decision stumps
         mod_data = util.split_xgb_outputs(self.xgb, lens)
@@ -143,7 +156,9 @@ class BaseBoostCard(BaseEstimator):
                 elif isinstance(sel, Override):
 
                     _x, _ = constraint.transform(np.array(sel.override).reshape(-1, 1))
-                    tuples.append((np.nan, sel.override, float(stump.transform(_x, pos))))
+                    tuples.append(
+                        (np.nan, sel.override, float(stump.transform(_x, pos)))
+                    )
                 # check if interval
                 elif isinstance(sel, Interval):
                     # Push these to a separate list and combine them before
@@ -152,8 +167,14 @@ class BaseBoostCard(BaseEstimator):
                     # filter X to only where it is in selection
                     f = sel.in_selection(X[[constraint.name]]).reshape(-1)
                     clf.fit(X[[constraint.name]][f], yhat[f])
-
                     intervals += util.sklearn_tree_to_bins(clf.tree_, values=sel.values)
+
+                elif isinstance(sel, Identity):
+                    yhat = stump.transform(x, pos)
+                    clf.fit(X[[constraint.name]], yhat)
+                    tuples += util.sklearn_tree_to_bins(
+                        clf.tree_, values=(-np.inf, np.inf)
+                    )
                 else:
                     pass
 
@@ -162,13 +183,28 @@ class BaseBoostCard(BaseEstimator):
 
         return self
 
-    def transform(self, data: pd.DataFrame) -> np.ndarray:
+    def transform(
+        self, X: pd.DataFrame
+    ) -> Tuple[List[np.ndarray], List[int], List[int]]:
+
+        xs: List[np.ndarray] = []
+        monos: List[int] = []
+
+        for constraint in self.constraints:
+            data, mono = constraint.transform(X[[constraint.name]])
+            xs.append(data)
+            monos += mono
+
+        lens: List[int] = [x.shape[1] for x in xs]
+
+        return xs, monos, lens
+
+    def fit_transform(self, X: pd.DataFrame) -> np.ndarray:
         pass
 
-    def fit_transform(self, data: pd.DataFrame) -> np.ndarray:
-        pass
-
-    def decision_function(self, X: pd.DataFrame, columns: bool = False, order: str = "F") -> np.ndarray:
+    def decision_function(
+        self, X: pd.DataFrame, columns: bool = False, order: str = "F"
+    ) -> np.ndarray:
         ## check that the names of the dataframe are found in self._bins
         diff = set(self._bins.keys()).difference(set(X.columns))
         if len(diff) > 0:
@@ -201,7 +237,7 @@ class BaseBoostCard(BaseEstimator):
         cols = np.hstack(out).reshape(-1, len(out), order=order)
 
         if columns:
-            return cols
+            return {k: v for k, v in zip(self._bins.keys(), out)}
         else:
             # sum the columns and add the intercept ... # TODO add intercept
             # prob = util.sigmoid(np.sum(cols, axis=1))
@@ -241,7 +277,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
 
         self.xgboost = XGBClassifier
 
-    def fit(
+    def fit(  # type: ignore
         self,
         X: pd.DataFrame,
         y: pd.Series,

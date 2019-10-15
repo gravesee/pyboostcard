@@ -3,7 +3,11 @@ from pyboostcard.decisionstump import *
 from pyboostcard.boostcard import *
 
 from xgboost.sklearn import XGBClassifier
+import xgboost as xgb
 from sklearn.tree._tree import Tree
+
+from sklearn.model_selection import train_test_split, KFold
+
 import pandas as pd
 from typing import Tuple, List, Dict, cast
 import numpy as np
@@ -13,68 +17,88 @@ import seaborn as sns
 
 df = pd.read_csv("train.csv")
 
-k = ['Age','Fare']
+k = ['Age','Fare', 'SibSp', 'Pclass']
 data = df[k]
 y = df['Survived']
+data['Sex'] = df.Sex.map({'male': 0, 'female': 1})
+
+x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
 
 ## create constraints, one for Age, one for Fare
 
-c_age = Constraint(
-    Missing(order=4),
-    Override(override=24.0, order=0),
-    Interval((0, 30), (True, True), 2, mono=-1),
-    Interval((30, 100), (False, True), 1, mono=0), name='Age')
+# c_age = Constraint(
+#     Missing(order=4),
+#     Interval((0, 30), (True, True), 2, mono=-1),
+#     Interval((30, 100), (False, True), 1, mono=0), name='Age')
 
-x = np.array([np.nan, 24.0, 0, 30, 31, 100])
+# x = np.array([np.nan, 24.0, 0, 30, 31, 100])
 
-print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
+# print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
 
 
-c1 =Constraint(
-    Missing(order=4),
-    Override(override=24.0, order=0),
-    Interval((0, 30), (True, True), 2, mono=-1),
-    Interval((30, 100), (False, True), 1, mono=0), name='Age')
+bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=500)
 
-c2 = Constraint(
-    Interval((0, 1000), (True, True), 0, mono=1),
-    name='Fare')
+# bst = BoostCardClassifier(constraints=[c1,c2,c3,c4], min_child_weight=25, n_estimators=200, learning_rate=0.1)
+bst.fit(x_train, y_train, eval_set=[(x_test, y_test)])
 
-bst = BoostCardClassifier(constraints=[c1,c2], min_child_weight=25)
-
-bst = BoostCardClassifier(constraints="config.json", min_child_weight=25)
-bst.fit(data, y)
-
+bst.transform(x_test)
 
 bst.score(data, y.values)
 
-
-bst.predict(data)
-bst.predict_log_proba(data)
 bst.decision_function(data, columns=True)
 
 
-## does grid search work?
-from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, roc_curve
+fpr, tpr, _ = roc_curve(y, bst.predict_log_proba(data))
+auc = roc_auc_score(y, bst.predict_log_proba(data))
+
+sns.lineplot(fpr, tpr)
+
+
+
+
+
+
+# bst.predict(data)
+# bst.predict_log_proba(data)
+yhat = bst.decision_function(data, columns=True)
+
+
+# ## does grid search work?
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 parameters = {
     'learning_rate': [0.01, 0.05, 0.1, 0.2],
-    'min_child_weight': [10, 25, 50]
+    'min_child_weight': [5, 10, 25, 50, 100],
+#    'gamma': [0, 0.5, 2.0, 10.0]
     }
 
-bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
+# bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
 
-bst.fit(data, y, eval_metric='auc', verbose=True)
+# bst.fit(data, y, eval_metric='auc', verbose=True)
+clf = GridSearchCV(bst, parameters, cv=10)
+
+from scipy.stats import randint as sp_randint
+from scipy.stats import uniform
+parameters = {
+    'learning_rate': [0.01, 0.20],
+    'min_child_weight': sp_randint(5, 100),
+#    'gamma': [0, 0.5, 2.0, 10.0]
+    }
 
 
-# clf = GridSearchCV(bst, parameters, cv=5)
-# clf.fit(data, y)
+clf = RandomizedSearchCV(bst, parameters, n_iter=20, cv=10)
+clf.fit(data, y, eval_metric='auc', verbose=True)
 
-# yhat = clf.estimator.decision_function(data, columns=True)
+yhat = clf.estimator.decision_function(data, columns=True)
 
-# sns.scatterplot(x=df['Age'], y=yhat[:,0])
+sns.scatterplot(x=df['Age'], y=yhat['Age'])
+sns.scatterplot(x=df['Sex'], y=yhat['Sex'])
+sns.scatterplot(x=df['Pclass'], y=yhat['Pclass'])
+sns.scatterplot(x=df['Fare'], y=yhat['Fare'])
+sns.scatterplot(x=df['SibSp'], y=yhat['SibSp'])
 
-# sns.scatterplot(x=df['Age'], y=yhat[:,0])
+# #sns.scatterplot(x=df['Age'], y=yhat[:,0])
 # sns.scatterplot(x=df['Fare'], y=yhat[:,1])
 
 # d1 = clf.get_params()
