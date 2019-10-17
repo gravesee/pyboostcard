@@ -7,7 +7,7 @@ import operator as op
 from functools import reduce
 from itertools import accumulate
 
-from typing import Dict, List, Tuple, Union, cast, Any
+from typing import Dict, List, Tuple, Union, cast, Any, Optional 
 import copy
 
 from xgboost.sklearn import XGBClassifier, XGBRegressor
@@ -49,10 +49,8 @@ class BaseBoostCard(BaseEstimator):
         constraints: Union[str, List[Constraint]],
         objective: str = "reg:squarederror",
         n_estimators: int = 100,
-        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
-        subsample: float = 1.0,
         max_leaf_nodes: int = 8,
     ) -> None:
 
@@ -63,11 +61,9 @@ class BaseBoostCard(BaseEstimator):
 
         self.objective = objective
         self.n_estimators = n_estimators
-        self.learning_rate = learning_rate
         self.gamma = gamma
         self.min_child_weight = min_child_weight
-        self.subsample = subsample
-
+        
         self.max_leaf_nodes = max_leaf_nodes
         self.decision_stumps: List[DecisionStump] = []
 
@@ -78,37 +74,21 @@ class BaseBoostCard(BaseEstimator):
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: Optional[pd.Series] = None,
-        eval_set=None,
-        eval_metric=None,
-        early_stopping_rounds=None,
-        verbose=True,
-        xgb_model=None,
-        sample_weight_eval_set=None,
-        callbacks=None,
+        eval_metric=None
     ) -> BaseBoostCard:
         check_consistent_length(X, y)
 
         # transform input data through constraints
         xs, monos, lens = self.transform(X)
 
-        # # do the same for the eval sets
-        # if eval_set is not None:
-        #     evals: Optional[List[Tuple[np.ndarray, np.ndarray]]] = []
-        #     for (data, target) in eval_set:
-        #         x_ = np.concatenate(self.transform(data)[0], axis=1)
-        #         if evals is not None:
-        #             evals.append((x_, target))
-        # else:
-        #     evals = None
-
         self.xgb = self.xgboost(
             max_depth=1,  # hard-coded
             objective=self.objective,
             n_estimators=self.n_estimators,
-            learning_rate=self.learning_rate,
+            learning_rate=1.0,
             gamma=self.gamma,
             min_child_weight=self.min_child_weight,
-            subsample=self.subsample,
+            subsample=1.0,
             monotone_constraints=str(tuple(monos)),
         )
 
@@ -116,13 +96,7 @@ class BaseBoostCard(BaseEstimator):
             np.concatenate(xs, axis=1),
             y,
             sample_weight=sample_weight,
-            eval_set=eval_set,
             eval_metric=eval_metric,
-            early_stopping_rounds=early_stopping_rounds,
-            verbose=verbose,
-            xgb_model=xgb_model,
-            sample_weight_eval_set=sample_weight_eval_set,
-            callbacks=callbacks,
         )
 
         # decision tree is always a regressor because we are using xgboost output as y
@@ -256,10 +230,8 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         constraints: Union[str, List[Constraint]],
         objective: str = "binary:logitraw",
         n_estimators: int = 100,
-        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
-        subsample: float = 1.0,
         # tree params
         max_leaf_nodes: int = 8,
     ) -> None:
@@ -268,10 +240,8 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
             constraints=constraints,
             objective=objective,
             n_estimators=n_estimators,
-            learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,
-            subsample=subsample,
             max_leaf_nodes=max_leaf_nodes,
         )
 
@@ -295,13 +265,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
             X,
             y,
             sample_weight=sample_weight,
-            eval_set=eval_set,
-            eval_metric=eval_metric,
-            early_stopping_rounds=early_stopping_rounds,
-            verbose=verbose,
-            xgb_model=xgb_model,
-            sample_weight_eval_set=sample_weight_eval_set,
-            callbacks=callbacks,
+            eval_metric=eval_metric,            
         )
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
@@ -324,10 +288,8 @@ class BoostCardRegressor(BaseBoostCard, RegressorMixin):
         constraints: Union[str, List[Constraint]],
         objective: str = "reg:squarederror",
         n_estimators: int = 100,
-        learning_rate: float = 0.3,
         gamma: float = 0.0,
         min_child_weight: int = 1,
-        subsample: float = 1.0,
         # tree params
         max_leaf_nodes: int = 8,
     ) -> None:
@@ -336,10 +298,8 @@ class BoostCardRegressor(BaseBoostCard, RegressorMixin):
             constraints=constraints,
             objective=objective,
             n_estimators=n_estimators,
-            learning_rate=learning_rate,
             gamma=gamma,
             min_child_weight=min_child_weight,
-            subsample=subsample,
         )
 
         self.xgboost = XGBRegressor

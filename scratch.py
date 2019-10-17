@@ -6,7 +6,7 @@ from xgboost.sklearn import XGBClassifier
 import xgboost as xgb
 from sklearn.tree._tree import Tree
 
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import train_test_split, KFold, cross_val_score
 
 import pandas as pd
 from typing import Tuple, List, Dict, cast
@@ -36,10 +36,12 @@ x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
 # print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
 
 
-bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=500)
+bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=100)
+
+scores = cross_val_score(clf, X=x_train, y=y_train, cv=2, scoring='roc_auc')
 
 # bst = BoostCardClassifier(constraints=[c1,c2,c3,c4], min_child_weight=25, n_estimators=200, learning_rate=0.1)
-bst.fit(x_train, y_train, eval_set=[(x_test, y_test)])
+bst.fit(x_train, y_train)
 
 bst.transform(x_test)
 
@@ -68,9 +70,9 @@ yhat = bst.decision_function(data, columns=True)
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 parameters = {
-    'learning_rate': [0.01, 0.05, 0.1, 0.2],
     'min_child_weight': [5, 10, 25, 50, 100],
-#    'gamma': [0, 0.5, 2.0, 10.0]
+    'max_leaf_nodes': list[5, 10, 25, 50, 100],
+
     }
 
 # bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
@@ -81,16 +83,15 @@ clf = GridSearchCV(bst, parameters, cv=10)
 from scipy.stats import randint as sp_randint
 from scipy.stats import uniform
 parameters = {
-    'learning_rate': [0.01, 0.20],
     'min_child_weight': sp_randint(5, 100),
-#    'gamma': [0, 0.5, 2.0, 10.0]
+    'max_leaf_nodes': sp_randint(2, 10),
     }
 
 
-clf = RandomizedSearchCV(bst, parameters, n_iter=20, cv=10)
+clf = RandomizedSearchCV(bst, parameters, n_iter=50, cv=5)
 clf.fit(data, y, eval_metric='auc', verbose=True)
 
-yhat = clf.estimator.decision_function(data, columns=True)
+yhat = clf.best_estimator_.decision_function(data, columns=True)
 
 sns.scatterplot(x=df['Age'], y=yhat['Age'])
 sns.scatterplot(x=df['Sex'], y=yhat['Sex'])

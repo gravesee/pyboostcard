@@ -152,10 +152,12 @@ class Constraint:
         out: List[np.ndarray] = []
         for blueprint in self._blueprints:
 
+            fitted_sels = blueprint.selections
+
             # start with a vector of np.nan to fill with the transformed results
             res = np.full_like(x, np.nan, dtype="float")
-            for selection in blueprint.selections:
-                res = selection.transform(x, res)
+            for selection in fitted_sels:
+                res = selection.transform(x, res)                
 
             out.append(res.reshape(-1, 1))
 

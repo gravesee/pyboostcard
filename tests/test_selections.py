@@ -55,7 +55,7 @@ class TestStaticMethods:
         assert Selection.bounds_from_string("()") == (False, False)
     
     def test_selection_from_dict(self):
-        i = Selection.from_dict({"type":"interval", "values":(0.0, 10.0), "bounds":"[]", "order":0, "mono":1})
+        i = Selection.from_dict({"type":"interval", "values":"[0.0, 10.0]", "order":0, "mono":1})
         assert i.__dict__ == Interval((0.0, 10.0), (True, True), 0, 1).__dict__
     
         o = Selection.from_dict({"type":"override", "override":-1., "order":0})
@@ -65,7 +65,7 @@ class TestStaticMethods:
         assert m.__dict__ == Missing(0).__dict__
     
     def test_selection_from_json(self):
-        i = Selection.from_json('{"type":"interval", "bounds":"[]", "values": [0.0, 10.0], "order":0, "mono":1}')
+        i = Selection.from_json('{"type":"interval", "values":"[0.0, 10.0]", "order":0, "mono":1}')
         assert i.__dict__ == Interval((0.0, 10.0), (True, True), 0, 1).__dict__
     
         o = Selection.from_json('{"type":"override", "override":-1.0, "order":0}')
