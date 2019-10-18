@@ -6,12 +6,14 @@ from xgboost.sklearn import XGBClassifier
 import xgboost as xgb
 from sklearn.tree._tree import Tree
 
-from sklearn.model_selection import train_test_split, KFold, cross_val_score
+from sklearn.model_selection import train_test_split, KFold
 
 import pandas as pd
 from typing import Tuple, List, Dict, cast
 import numpy as np
 import copy
+
+from collections import defaultdict
 
 import seaborn as sns
 
@@ -22,7 +24,7 @@ data = df[k]
 y = df['Survived']
 data['Sex'] = df.Sex.map({'male': 0, 'female': 1})
 
-x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
+# x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
 
 ## create constraints, one for Age, one for Fare
 
@@ -36,14 +38,46 @@ x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
 # print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
 
 
-bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=100)
-
-scores = cross_val_score(clf, X=x_train, y=y_train, cv=2, scoring='roc_auc')
+bst = BoostCardClassifier(
+    constraints="config.json", min_child_weight=25, n_estimators=200, cv=2)
 
 # bst = BoostCardClassifier(constraints=[c1,c2,c3,c4], min_child_weight=25, n_estimators=200, learning_rate=0.1)
-bst.fit(x_train, y_train)
+res = bst.fit(data, y)
 
-bst.transform(x_test)
+for result in res:
+    means = {}
+    for sample, scores in result.items():
+        for score, values in scores.items():
+            vals = means.get(score, [])
+            vals.append(values)
+            print(len(values))
+            means[score] = vals
+
+
+
+## get all keys
+
+x = bst.decision_function(x_train, columns=True)
+
+from sklearn.linear_model import LassoCV
+
+lasso = LassoCV(positive=True, selection='random', cv=10)
+
+lasso.fit(pd.DataFrame(x), y_train)
+
+coefs = lasso.coef_
+
+## update the bin weights
+for (k, v), coef in zip(bst._bins.items(), coefs):
+    updated = []
+    for tup in v:
+        updated.append(tup[:2] + (tup[2] * coef,))
+    bst._bins[k] = updated.copy()
+bst._bins
+
+y1 = bst.predict_log_proba(x_train)
+y2 = lasso._decision_function(pd.DataFrame(x))
+
 
 bst.score(data, y.values)
 
@@ -51,12 +85,13 @@ bst.decision_function(data, columns=True)
 
 
 from sklearn.metrics import roc_auc_score, roc_curve
-fpr, tpr, _ = roc_curve(y, bst.predict_log_proba(data))
+fpr, tpr, _ = roc_curve(y_train, y1)
 auc = roc_auc_score(y, bst.predict_log_proba(data))
 
 sns.lineplot(fpr, tpr)
 
-
+fpr2, tpr2, _ = roc_curve(y_train, y2)
+sns.lineplot(fpr2, tpr2)
 
 
 
@@ -70,9 +105,9 @@ yhat = bst.decision_function(data, columns=True)
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 parameters = {
+    'learning_rate': [0.01, 0.05, 0.1, 0.2],
     'min_child_weight': [5, 10, 25, 50, 100],
-    'max_leaf_nodes': list[5, 10, 25, 50, 100],
-
+#    'gamma': [0, 0.5, 2.0, 10.0]
     }
 
 # bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
@@ -83,15 +118,16 @@ clf = GridSearchCV(bst, parameters, cv=10)
 from scipy.stats import randint as sp_randint
 from scipy.stats import uniform
 parameters = {
+    'learning_rate': uniform(0.01, 0.20),
     'min_child_weight': sp_randint(5, 100),
-    'max_leaf_nodes': sp_randint(2, 10),
+#    'gamma': [0, 0.5, 2.0, 10.0]
     }
 
 
-clf = RandomizedSearchCV(bst, parameters, n_iter=50, cv=5)
+clf = RandomizedSearchCV(bst, parameters, n_iter=20, cv=10)
 clf.fit(data, y, eval_metric='auc', verbose=True)
 
-yhat = clf.best_estimator_.decision_function(data, columns=True)
+yhat = clf.estimator.decision_function(data, columns=True)
 
 sns.scatterplot(x=df['Age'], y=yhat['Age'])
 sns.scatterplot(x=df['Sex'], y=yhat['Sex'])

@@ -7,7 +7,7 @@ import operator as op
 from functools import reduce
 from itertools import accumulate
 
-from typing import Dict, List, Tuple, Union, cast, Any, Optional 
+from typing import Dict, List, Tuple, Union, cast, Any, Optional
 import copy
 
 from xgboost.sklearn import XGBClassifier, XGBRegressor
@@ -22,12 +22,70 @@ from sklearn.base import (
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.tree._tree import Tree
 from sklearn.utils import check_consistent_length
+from sklearn.model_selection import BaseCrossValidator, check_cv
 
+from joblib import delayed, Parallel
 
 import json
 
 
-## TODO: implement preprocess mixin
+def _fit_xgboost_with_early_stopping(
+    boostcard,
+    X,
+    y,
+    train,
+    test,
+    model,
+    objective,
+    n_estimators,
+    learning_rate,
+    gamma,
+    min_child_weight,
+    subsample,
+    eval_metric,
+    w=None,
+    early_stopping_rounds=25,
+):
+    xs, monos, lens = boostcard.transform(X)
+    X_ = np.hstack(xs)
+
+    X_train = X_[train]
+    y_train = y[train]
+    X_test = X_[test]
+    y_test = y[test]
+
+    if w is None:
+        w_train = np.ones_like(y_train)
+        w_test = np.ones_like(y_test)
+    else:
+        w_train = w[train]
+        w_test = w[test]
+
+    clf = model(
+        max_depth=1,  # hard-coded
+        objective=objective,
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        gamma=gamma,
+        min_child_weight=min_child_weight,
+        subsample=subsample,
+        monotone_constraints=str(tuple(monos)),
+    )
+
+    clf.fit(
+        X_train,
+        y_train,
+        sample_weight=w_train,
+        sample_weight_eval_set=[w_test],
+        eval_metric=eval_metric,
+        eval_set=[(X_test, y_test)],
+        early_stopping_rounds=early_stopping_rounds,
+    )
+
+    return clf.evals_result()
+
+
+CVType = Optional[Union[BaseCrossValidator, int, Iterable]]
 
 
 class BaseBoostCard(BaseEstimator):
@@ -47,11 +105,16 @@ class BaseBoostCard(BaseEstimator):
     def __init__(
         self,
         constraints: Union[str, List[Constraint]],
-        objective: str = "reg:squarederror",
+        objective: str = "binary:logitraw",
         n_estimators: int = 100,
         gamma: float = 0.0,
+        subsample: float = 0.7,
+        learning_rate: float = 0.3,
         min_child_weight: int = 1,
         max_leaf_nodes: int = 8,
+        cv: CVType = "warn",
+        n_jobs: Optional[int] = None,
+        verbose: bool = False,
     ) -> None:
 
         if isinstance(constraints, str):
@@ -62,42 +125,82 @@ class BaseBoostCard(BaseEstimator):
         self.objective = objective
         self.n_estimators = n_estimators
         self.gamma = gamma
+        self.subsample = subsample
+        self.learning_rate = learning_rate
         self.min_child_weight = min_child_weight
-        
         self.max_leaf_nodes = max_leaf_nodes
         self.decision_stumps: List[DecisionStump] = []
+        self.cv = cv
+        self.n_jobs = n_jobs
+        self.verbose = verbose
 
-        self.xgboost = XGBRegressor
+        if isinstance(self, BoostCardClassifier):
+            self.model = XGBClassifier
+        elif isinstance(self, BoostCardRegressor):
+            self.model = XGBRegressor
 
     def fit(  # type: ignore
         self,
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: Optional[pd.Series] = None,
-        eval_metric=None
+        eval_metric=None,
     ) -> BaseBoostCard:
         check_consistent_length(X, y)
+
+        # init cross-validation generator
+        cv = check_cv(self.cv)
+
+        folds = list(cv.split(X, y))
 
         # transform input data through constraints
         xs, monos, lens = self.transform(X)
 
-        self.xgb = self.xgboost(
-            max_depth=1,  # hard-coded
-            objective=self.objective,
-            n_estimators=self.n_estimators,
-            learning_rate=1.0,
-            gamma=self.gamma,
-            min_child_weight=self.min_child_weight,
-            subsample=1.0,
-            monotone_constraints=str(tuple(monos)),
+        ## fit multiple xgboost models
+        jobs = (
+            delayed(_fit_xgboost_with_early_stopping)(
+                self, 
+                X,
+                y,
+                train,
+                test,
+                model=self.model,
+                objective=self.objective,
+                n_estimators=self.n_estimators,
+                learning_rate=self.learning_rate,
+                gamma=self.gamma,
+                min_child_weight=self.min_child_weight,
+                subsample=self.subsample,
+                eval_metric=eval_metric,
+                w=sample_weight,
+                early_stopping_rounds=25,
+            )
+            for train, test in folds
         )
 
-        self.xgb.fit(
-            np.concatenate(xs, axis=1),
-            y,
-            sample_weight=sample_weight,
-            eval_metric=eval_metric,
-        )
+        eval_logs = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(jobs)
+
+        ## get the best results and then fit a new xgbooster using the optimal iteration.. or blend them somehow?
+
+        return eval_logs
+
+        # self.xgb = self.xgboost(
+        #     max_depth=1,  # hard-coded
+        #     objective=self.objective,
+        #     n_estimators=self.n_estimators,
+        #     learning_rate=1.0,
+        #     gamma=self.gamma,
+        #     min_child_weight=self.min_child_weight,
+        #     subsample=1.0,
+        #     monotone_constraints=str(tuple(monos)),
+        # )
+
+        # self.xgb.fit(
+        #     np.concatenate(xs, axis=1),
+        #     y,
+        #     sample_weight=sample_weight,
+        #     eval_metric=eval_metric,
+        # )
 
         # decision tree is always a regressor because we are using xgboost output as y
         clf = DecisionTreeRegressor(
@@ -224,49 +327,32 @@ class BaseBoostCard(BaseEstimator):
 
 
 class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
-    def __init__(
-        self,
-        # xgb params
-        constraints: Union[str, List[Constraint]],
-        objective: str = "binary:logitraw",
-        n_estimators: int = 100,
-        gamma: float = 0.0,
-        min_child_weight: int = 1,
-        # tree params
-        max_leaf_nodes: int = 8,
-    ) -> None:
+    # def __init__(
+    #     self,
+    #     # xgb params
+    #     constraints: Union[str, List[Constraint]],
+    #     objective: str = "binary:logitraw",
+    #     n_estimators: int = 100,
+    #     gamma: float = 0.0,
+    #     min_child_weight: int = 1,
+    #     # tree params
+    #     max_leaf_nodes: int = 8,
+    # ) -> None:
 
-        super().__init__(
-            constraints=constraints,
-            objective=objective,
-            n_estimators=n_estimators,
-            gamma=gamma,
-            min_child_weight=min_child_weight,
-            max_leaf_nodes=max_leaf_nodes,
-        )
+    #     super().__init__(
+    #         constraints=constraints,
+    #         objective=objective,
+    #         n_estimators=n_estimators,
+    #         gamma=gamma,
+    #         min_child_weight=min_child_weight,
+    #         max_leaf_nodes=max_leaf_nodes,
+    #     )
 
-        self.xgboost = XGBClassifier
+    #     self.xgboost = XGBClassifier
 
-    def fit(  # type: ignore
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        sample_weight=None,
-        eval_set=None,
-        eval_metric=None,
-        early_stopping_rounds=None,
-        verbose=True,
-        xgb_model=None,
-        sample_weight_eval_set=None,
-        callbacks=None,
-    ) -> BaseBoostCard:
+    def fit(self, X, y, **kwargs) -> BaseBoostCard:
         self.classes_, y = np.unique(y, return_inverse=True)
-        return super().fit(
-            X,
-            y,
-            sample_weight=sample_weight,
-            eval_metric=eval_metric,            
-        )
+        return super().fit(X, y, **kwargs)
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         D = self.decision_function(X)
@@ -282,24 +368,26 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
 
 
 class BoostCardRegressor(BaseBoostCard, RegressorMixin):
-    def __init__(
-        self,
-        # xgb params
-        constraints: Union[str, List[Constraint]],
-        objective: str = "reg:squarederror",
-        n_estimators: int = 100,
-        gamma: float = 0.0,
-        min_child_weight: int = 1,
-        # tree params
-        max_leaf_nodes: int = 8,
-    ) -> None:
+    pass
+    # def __init__(
+    #     self,
+    #     # xgb params
+    #     constraints: Union[str, List[Constraint]],
+    #     objective: str = "reg:squarederror",
+    #     n_estimators: int = 100,
+    #     gamma: float = 0.0,
+    #     min_child_weight: int = 1,
+    #     # tree params
+    #     max_leaf_nodes: int = 8,
+    # ) -> None:
 
-        super().__init__(
-            constraints=constraints,
-            objective=objective,
-            n_estimators=n_estimators,
-            gamma=gamma,
-            min_child_weight=min_child_weight,
-        )
+    # super().__init__(
+    #     constraints=constraints,
+    #     objective=objective,
+    #     n_estimators=n_estimators,
+    #     gamma=gamma,
+    #     min_child_weight=min_child_weight,
+    # )
 
-        self.xgboost = XGBRegressor
+    # self.xgboost = XGBRegressor
+
