@@ -1,15 +1,59 @@
 {
-  "Age" : [
-    {"type": "missing", "order": 4},
-    {"type": "override", "override": 24.0, "order": 0},
-    {"type": "interval", "values": "[0, 30]", "order": 2, "mono": -1},
-    {"type": "interval", "values": "(30, 100]", "order": 1, "mono": 1}
+  "Age": [
+    {
+      "type": "missing",
+      "order": 4
+    },
+    {
+      "type": "override",
+      "override": 24.0,
+      "order": 0
+    },
+    {
+      "type": "interval",
+      "values": "[0, 30]",
+      "order": 2,
+      "mono": -1
+    },
+    {
+      "type": "interval",
+      "values": "(30, 100]",
+      "order": 1,
+      "mono": 1
+    }
   ],
-  "Fare" : [
-    {"type": "interval", "values": "[-inf, inf]", "order": 0, "mono": 1}
+  "Fare": [
+    {
+      "type": "interval",
+      "values": "[-inf, inf]",
+      "order": 0,
+      "mono": 1
+    }
   ],
-  "Sex" : [{"type": "identity"}],
-  "SibSp": [{"type": "identity"}],
-  "Pclass": [{"type": "identity"}]
-
+  "Sex": [
+    {
+      "type": "identity"
+    }
+  ],
+  "SibSp": [
+    {
+      "type": "identity"
+    }
+  ],
+  "Pclass": [
+    {
+      "type": "interval",
+      "values": "[-inf, inf]",
+      "order": 0,
+      "mono": -1
+    }
+  ],
+  "Parch": [
+    {
+      "type": "interval",
+      "values": "[-inf, inf]",
+      "order": 0,
+      "mono": 1
+    }
+  ]
 }

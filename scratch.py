@@ -13,41 +13,39 @@ from typing import Tuple, List, Dict, cast
 import numpy as np
 import copy
 
+import glmnet_python
+from glmnet_python import cvglmnet
+
 import seaborn as sns
 
-df = pd.read_csv("train.csv")
+df: pd.DataFrame = pd.read_csv("train.csv")
 
-k = ['Age','Fare', 'SibSp', 'Pclass']
+k = ['Age','Fare', 'SibSp', 'Pclass', 'Parch']
 data = df[k]
 y = df['Survived']
 data['Sex'] = df.Sex.map({'male': 0, 'female': 1})
 
-x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
-
-## create constraints, one for Age, one for Fare
-
-# c_age = Constraint(
-#     Missing(order=4),
-#     Interval((0, 30), (True, True), 2, mono=-1),
-#     Interval((30, 100), (False, True), 1, mono=0), name='Age')
-
-# x = np.array([np.nan, 24.0, 0, 30, 31, 100])
-
-# print(np.hstack([x.reshape(-1, 1), c_age.transform(x)[0]]))
-
-
 bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=100)
 
-scores = cross_val_score(clf, X=x_train, y=y_train, cv=2, scoring='roc_auc')
+bst.fit(data, y)
 
-# bst = BoostCardClassifier(constraints=[c1,c2,c3,c4], min_child_weight=25, n_estimators=200, learning_rate=0.1)
-bst.fit(x_train, y_train)
+# bst.p(x_test)
 
-bst.transform(x_test)
+#bst.score(data, y.values)
 
-bst.score(data, y.values)
+X = bst.decision_function(data, columns=True)
 
-bst.decision_function(data, columns=True)
+import matplotlib.pyplot as plt
+for col, v in X.items():
+    plt.figure()
+    sns.scatterplot(df[col], v)
+
+import scipy as sp
+X_ = np.transpose(np.array(list(X.values()), dtype=sp.float64))
+
+fit = cvglmnet(x = X_, y = np.array(y.values, dtype=sp.float64), family = 'binomial', \
+                    # weights = wts, \
+                    alpha = 1, nlambda = 20)
 
 
 from sklearn.metrics import roc_auc_score, roc_curve
