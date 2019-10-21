@@ -38,7 +38,7 @@ x_train, x_test, y_train, y_test = train_test_split(data, y, test_size=0.33)
 
 bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=100)
 
-scores = cross_val_score(clf, X=x_train, y=y_train, cv=2, scoring='roc_auc')
+scores = cross_val_score(bst, X=x_train, y=y_train, cv=2, scoring='roc_auc')
 
 # bst = BoostCardClassifier(constraints=[c1,c2,c3,c4], min_child_weight=25, n_estimators=200, learning_rate=0.1)
 bst.fit(x_train, y_train)
@@ -71,7 +71,7 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 parameters = {
     'min_child_weight': [5, 10, 25, 50, 100],
-    'max_leaf_nodes': list[5, 10, 25, 50, 100],
+    'max_leaf_nodes': [5, 10, 25, 50, 100],
 
     }
 
