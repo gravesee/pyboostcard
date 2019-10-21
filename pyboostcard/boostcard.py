@@ -7,7 +7,7 @@ import operator as op
 from functools import reduce
 from itertools import accumulate
 
-from typing import Dict, List, Tuple, Union, cast, Any, Optional 
+from typing import Dict, List, Tuple, Union, cast, Any, Optional
 import copy
 
 from xgboost.sklearn import XGBClassifier, XGBRegressor
@@ -63,7 +63,7 @@ class BaseBoostCard(BaseEstimator):
         self.n_estimators = n_estimators
         self.gamma = gamma
         self.min_child_weight = min_child_weight
-        
+
         self.max_leaf_nodes = max_leaf_nodes
         self.decision_stumps: List[DecisionStump] = []
 
@@ -74,7 +74,7 @@ class BaseBoostCard(BaseEstimator):
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: Optional[pd.Series] = None,
-        eval_metric=None
+        eval_metric=None,
     ) -> BaseBoostCard:
         check_consistent_length(X, y)
 
@@ -82,6 +82,8 @@ class BaseBoostCard(BaseEstimator):
         xs, monos, lens = self.transform(X)
 
         self.xgb = self.xgboost(
+            tree_method="hist",
+            grow_policy="lossguide",
             max_depth=1,  # hard-coded
             objective=self.objective,
             n_estimators=self.n_estimators,
@@ -261,12 +263,7 @@ class BoostCardClassifier(BaseBoostCard, ClassifierMixin):
         callbacks=None,
     ) -> BaseBoostCard:
         self.classes_, y = np.unique(y, return_inverse=True)
-        return super().fit(
-            X,
-            y,
-            sample_weight=sample_weight,
-            eval_metric=eval_metric,            
-        )
+        return super().fit(X, y, sample_weight=sample_weight, eval_metric=eval_metric)
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         D = self.decision_function(X)
