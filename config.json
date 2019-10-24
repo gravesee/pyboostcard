@@ -1,8 +1,13 @@
 {
   "Age": [
     {
+      "type": "clamp",
+      "ll": 18,
+      "ul": 62
+    },
+    {
       "type": "missing",
-      "order": 4
+      "order": 0
     },
     {
       "type": "override",
@@ -11,23 +16,23 @@
     },
     {
       "type": "interval",
-      "values": "[0, 30]",
-      "order": 2,
-      "mono": -1
+      "values": "(40, 100]",
+      "order": 0,
+      "mono": 1
     },
     {
       "type": "interval",
-      "values": "(30, 100]",
-      "order": 1,
-      "mono": 1
-    }
+      "values": "[0, 40]",
+      "order": 0,
+      "mono": -1
+    }    
   ],
   "Fare": [
     {
       "type": "interval",
       "values": "[-inf, inf]",
       "order": 0,
-      "mono": 1
+      "mono": 0
     }
   ],
   "Sex": [
@@ -45,7 +50,7 @@
       "type": "interval",
       "values": "[-inf, inf]",
       "order": 0,
-      "mono": -1
+      "mono": 0
     }
   ],
   "Parch": [
@@ -53,7 +58,7 @@
       "type": "interval",
       "values": "[-inf, inf]",
       "order": 0,
-      "mono": 1
+      "mono": 0
     }
   ]
 }

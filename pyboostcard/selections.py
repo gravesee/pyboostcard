@@ -4,14 +4,16 @@ from pyboostcard.constants import *
 from typing import Dict, Type, Tuple, Union, Callable, Optional, Any, cast
 from collections import namedtuple
 from abc import ABC, abstractmethod, abstractproperty
-import numpy as np # typing: ignore
+from copy import deepcopy
+import numpy as np  # typing: ignore
 import operator as op
 import json
 import re
 
-np.warnings.filterwarnings('ignore')
+np.warnings.filterwarnings("ignore")
 
 Comparator = Callable[[np.ndarray, float], np.ndarray]
+
 
 class Selection(ABC):
 
@@ -28,20 +30,20 @@ class Selection(ABC):
         if out is None:
             raise ValueError(f"Bounds string not recognized: {chars}.")
         return out
-    
-    @staticmethod 
+
+    @staticmethod
     def interval_from_string(chars: str) -> Tuple[Tuple[float, float], Tuple[bool, bool]]:
         bounds = re.sub("[^\[\(\]\)]", "", chars)
         tmp = re.sub("[\[\(\]\)]", "", chars).split(",")
         if len(tmp) != 2:
-            raise ValueError(f"Invalid specification for interval: {chars}")        
-        
+            raise ValueError(f"Invalid specification for interval: {chars}")
+
         ## convert to floats
         vals = []
         for v in tmp:
-            if v == 'inf':
+            if v == "inf":
                 vals.append(np.inf)
-            elif v == '-inf':
+            elif v == "-inf":
                 vals.append(-np.inf)
             else:
                 vals.append(float(v))
@@ -60,6 +62,8 @@ class Selection(ABC):
             out = Missing(d["order"])
         elif d["type"] == "identity":
             out = Identity()
+        elif d["type"] == "clamp":
+            out = Clamp(d["ll"], d["ul"])
         else:
             raise ValueError(f"Selection type, {d['type']}, not recognized.")
 
@@ -79,15 +83,29 @@ class Selection(ABC):
     @property
     def sort_value(self) -> Tuple[int, int, float]:
         return self.priority, self.order, -np.inf
-    
+
+
 Bounds = namedtuple("Bounds", ["left", "right"])
+
+## TODO: move this into regular selection!?
+
 
 class FittedSelection:
     def __init__(self, selection: Selection, value: Optional[float] = None):
         self.selection = selection
         self.value = value
 
-    def transform(self, x: np.ndarray, result: np.ndarray) -> np.ndarray:
+    def transform(self, x: np.ndarray, result: np.ndarray, clamp: Clamp) -> np.ndarray:
+        if isinstance(self.selection, Interval):
+            # f = np.isnan(result)
+            f = self.selection.in_selection(x) & np.isnan(result)
+            ## clamp when fitting intervals only?
+            #print(f"Clamping! {(clamp.ll, clamp.ul)}")
+            ## clamp x and then do the rest as normal...
+            #print(result)
+            x[f] = np.clip(x[f], clamp.ll, clamp.ul)
+            #print(x)
+
         replace = x if self.value is None else self.value
         # make sure to only update output vector where filter is true AND result == np.nan
         f = self.selection.in_selection(x) & np.isnan(result)
@@ -96,10 +114,6 @@ class FittedSelection:
     @property
     def sort_value(self) -> Tuple[int, int, float]:
         return self.selection.sort_value
-
-    @property
-    def fitted(self) -> bool:
-        return (self.value is not None) and (self.value != np.nan)
 
 
 class Identity(Selection):
@@ -119,7 +133,27 @@ class Identity(Selection):
         return "I"
 
 
+class Clamp(Selection):
+    """Constrain feature within range of values"""
+
+    priority = 2
+
+    def __init__(self, ll: float, ul: float, order: int = 0):
+        self.order = None
+        self.ll = ll
+        self.ul = ul
+        self.value: Optional[float] = None
+
+    def in_selection(self, x: np.ndarray) -> np.ndarray:
+        """Always return true for clamp selections"""
+        return np.full_like(x, True, dtype="bool")
+
+    def __repr__(self) -> str:
+        return "C"
+
+
 class Interval(Selection):
+    """Constrain interval between values with optional inclusivity and montonicity"""
 
     priority = 0
 
@@ -160,10 +194,17 @@ class Interval(Selection):
         ltest, rtest = self.testmap[self.bounds]
         return ltest(z, self.values[0]) & rtest(z, self.values[1])
 
+    # def _clip(self, clamp: Clamp) -> None:
+    #     """clip the min max rage of the interval to be within the clamped values"""
+    #     ll, ul = self.values
+    #     self.values = (max(ll, clamp.ll), min(ul, clamp.ul))
+    #     return None
+
 
 class Override(Selection):
+    """Constrain specific value"""
 
-    priority = 1
+    priority = 3
 
     def __init__(self, override: float, order: int = 0):
         super().__init__(order)
@@ -177,8 +218,9 @@ class Override(Selection):
 
 
 class Missing(Selection):
+    """Constrain Missing values (np.nan)"""
 
-    priority = 2
+    priority = 1
 
     def __init__(self, order: int = 0):
         super().__init__(order)

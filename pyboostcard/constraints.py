@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pyboostcard.selections import *
 from pyboostcard.constants import *
 from pyboostcard.util import indices
@@ -17,6 +19,9 @@ class Blueprint:
     def __init__(self, selections: List[FittedSelection], mono: Optional[int] = 0):
         self.selections = sorted(selections, key=attrgetter("sort_value"), reverse=True)
         self.mono = mono
+    
+    def __len__(self) -> int:
+        return len(self.selections)
 
 
 def check_valid_intervals(selections: List[Interval]) -> None:
@@ -35,6 +40,16 @@ class Constraint:
     """A constraint is a collection of selections"""
 
     @staticmethod
+    def from_json(s: str) -> Constraint:
+        res: Dict[str, List[Any]] = json.loads(s)
+
+        sels: List[Selection] = []
+        for sel in list(res.values())[0]:
+            sels.append(Selection.from_dict(sel))
+
+        return Constraint(*sels, name=list(res.keys())[0])
+
+    @staticmethod
     def filter_types(selections: List[Selection], type: Type[Selection]) -> List[Selection]:
         """Return filtered list of a single, specified type"""
         return [x for x in selections if isinstance(x, type)]
@@ -47,6 +62,10 @@ class Constraint:
             raise ValueError("All args must be Selection objects.")
 
         self.name = name
+
+        # TODO: Check if theres a clamp selection... if so, update the mins and maxes of the intervals to be 
+        # within the bounds of the clamp
+
         self.selections = sorted(args, key=attrgetter("sort_value"), reverse=True)
         self._blueprints: List[Blueprint] = []
 
@@ -57,6 +76,15 @@ class Constraint:
         # Check Missing Selections
         if len(self.filter_types(self.selections, Missing)) > 1:
             raise ValueError("Constraint arguments can only have 1 Missing selection.")
+
+        if len(self.filter_types(self.selections, Clamp)) > 1:
+            raise ValueError("Constraint arguments can only have 1 Clamp selection.")
+    
+        ## clip intervals if clamp present
+        # if len(self.filter_types(self.selections, Clamp)) == 1:
+        #     clamp = self.filter_types(self.selections, Clamp)[0]
+        #     for interval in self.get_intervals():
+        #         interval._clip(cast(Clamp, clamp))
 
         # Check Override Selections
         overrides = cast(List[Override], self.filter_types(self.selections, Override))
@@ -83,9 +111,24 @@ class Constraint:
 
     def order(self, desc: bool = False) -> List[int]:
         mul = -1 if desc else 1
-        return [x.order * mul for x in self.selections]
+        res = []
+        for sel in self.selections:
+            if sel.order is None:
+                res.append(sel.order)
+            else:
+                res.append(sel.order * mul)
+        return res
+    
+    def __len__(self) -> int:
+        return len(self._blueprints)
 
     def __fit_interval(self, interval: Interval) -> List[Blueprint]:
+
+        tmp: List[Clamp] = cast(List[Clamp], self.filter_types(self.selections, Clamp))
+        if len(tmp) > 0:
+            clamp: Optional[Clamp] = tmp[0]
+        else:
+            clamp = None
 
         if interval.mono == 0:
             monos: Tuple[int, ...] = (1, 1, -1, -1)
@@ -95,9 +138,14 @@ class Constraint:
             monos = (-1, -1)
 
         out: List[Blueprint] = []
-        for mi, mono in enumerate(monos):            
+        for mi, mono in enumerate(monos):
+
             order = self.order(desc=False if mono == 1 else True)
             ll, ul = interval.values
+
+            if clamp is not None:
+                ll = max(ll, clamp.ll)
+                ul = min(ul, clamp.ul)
 
             # need the index order of the current interval, not the original order
             pos = self.selections.index(interval)
@@ -108,7 +156,9 @@ class Constraint:
             # of the other constraints
             vals: List[Optional[float]] = []
             for j in order:
-                if j < i:
+                if j is None: # clamp case
+                    vals.append(None)
+                elif j < i:
                     vals.append(ll - 1 - (i - j))
                 elif j == i:
                     if mi % 2 == 0:
@@ -138,7 +188,7 @@ class Constraint:
         else:  # if no intervals, much simpler
             tmp = []
             for sel, val in zip(self.selections, self.order()):
-                if isinstance(sel, Identity):
+                if isinstance(sel, Identity) or isinstance(sel, Clamp):
                     tmp.append(FittedSelection(sel, None))
                 else:
                     tmp.append(FittedSelection(sel, val))
@@ -149,15 +199,23 @@ class Constraint:
         if not self.fitted:
             raise RuntimeError("Attempting to call `transform` on constraint that hasn't been fit.")
 
+        tmp = cast(List[Clamp], self.filter_types(self.selections, Clamp))
+        if len(tmp) == 0:
+            clamp = Clamp(-np.inf, np.inf)
+        else:
+            clamp = tmp[0]
+
         out: List[np.ndarray] = []
         for blueprint in self._blueprints:
+            #print("New Blueprint!")
 
             fitted_sels = blueprint.selections
 
             # start with a vector of np.nan to fill with the transformed results
             res = np.full_like(x, np.nan, dtype="float")
             for selection in fitted_sels:
-                res = selection.transform(x, res)                
+                #print(f"  {type(selection.selection)}")
+                res = selection.transform(x, res, clamp)
 
             out.append(res.reshape(-1, 1))
 

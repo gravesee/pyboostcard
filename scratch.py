@@ -13,9 +13,6 @@ from typing import Tuple, List, Dict, cast
 import numpy as np
 import copy
 
-import glmnet_python
-from glmnet_python import cvglmnet
-
 import seaborn as sns
 
 df: pd.DataFrame = pd.read_csv("train.csv")
@@ -25,141 +22,155 @@ data = df[k]
 y = df['Survived']
 data['Sex'] = df.Sex.map({'male': 0, 'female': 1})
 
-bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=100)
+bst = BoostCardClassifier(constraints="config.json", min_child_weight=25, n_estimators=500, learning_rate=0.1)
+
+# TODO: adding the clamp selection breaks multiple monotonicity selections in a constraint
+# TODO: Fix it yo!
+
+bst.lengths()
 
 bst.fit(data, y)
 
-# bst.p(x_test)
+bst.feature_importances_
 
-#bst.score(data, y.values)
+bst._bins['Age'].plot()
 
-X = bst.decision_function(data, columns=True)
+# ## TODO: account for the case when min/max are inf and no other levels...
+# ## TODO: Pull out NAs and Overrides in plots as red dots
+# ## TODO: explore making step plots instead... should be easy with itertools and tee...
 
-import matplotlib.pyplot as plt
-for col, v in X.items():
-    plt.figure()
-    sns.scatterplot(df[col], v)
-
-import scipy as sp
-X_ = np.transpose(np.array(list(X.values()), dtype=sp.float64))
-
-fit = cvglmnet(x = X_, y = np.array(y.values, dtype=sp.float64), family = 'binomial', \
-                    # weights = wts, \
-                    alpha = 1, nlambda = 20)
+# # # bst.p(x_test)
 
 
-from sklearn.metrics import roc_auc_score, roc_curve
-fpr, tpr, _ = roc_curve(y, bst.predict_log_proba(data))
-auc = roc_auc_score(y, bst.predict_log_proba(data))
+# # #bst.score(data, y.values)
 
-sns.lineplot(fpr, tpr)
+# # X = bst.decision_function(data, columns=True)
 
+# # import matplotlib.pyplot as plt
+# # for col, v in X.items():
+# #     plt.figure()
+# #     sns.scatterplot(df[col], v)
 
+# # import scipy as sp
+# # X_ = np.transpose(np.array(list(X.values()), dtype=sp.float64))
 
-
-
-
-# bst.predict(data)
-# bst.predict_log_proba(data)
-yhat = bst.decision_function(data, columns=True)
-
-
-# ## does grid search work?
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-
-parameters = {
-    'min_child_weight': [5, 10, 25, 50, 100],
-    'max_leaf_nodes': [5, 10, 25, 50, 100],
-
-    }
-
-# bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
-
-# bst.fit(data, y, eval_metric='auc', verbose=True)
-clf = GridSearchCV(bst, parameters, cv=10)
-
-from scipy.stats import randint as sp_randint
-from scipy.stats import uniform
-parameters = {
-    'min_child_weight': sp_randint(5, 100),
-    'max_leaf_nodes': sp_randint(2, 10),
-    }
+# # fit = cvglmnet(x = X_, y = np.array(y.values, dtype=sp.float64), family = 'binomial', \
+# #                     # weights = wts, \
+# #                     alpha = 1, nlambda = 20)
 
 
-clf = RandomizedSearchCV(bst, parameters, n_iter=50, cv=5)
-clf.fit(data, y, eval_metric='auc', verbose=True)
+# # from sklearn.metrics import roc_auc_score, roc_curve
+# # fpr, tpr, _ = roc_curve(y, bst.predict_log_proba(data))
+# # auc = roc_auc_score(y, bst.predict_log_proba(data))
 
-yhat = clf.best_estimator_.decision_function(data, columns=True)
-
-sns.scatterplot(x=df['Age'], y=yhat['Age'])
-sns.scatterplot(x=df['Sex'], y=yhat['Sex'])
-sns.scatterplot(x=df['Pclass'], y=yhat['Pclass'])
-sns.scatterplot(x=df['Fare'], y=yhat['Fare'])
-sns.scatterplot(x=df['SibSp'], y=yhat['SibSp'])
-
-# #sns.scatterplot(x=df['Age'], y=yhat[:,0])
-# sns.scatterplot(x=df['Fare'], y=yhat[:,1])
-
-# d1 = clf.get_params()
-# d2 = bst.xgb.get_params()
-# for k, v in d1.items():
-#     print(f"{k}: match: {d1[k] == d2[k]}")
+# # sns.lineplot(fpr, tpr)
 
 
-# clf.get_params() == bst.xgb.get_params()
 
 
-# ## TROUBLE SHOOT
-
-# X = df
-
-# xs: List[np.ndarray] = []
-# monos: List[int] = []
-# for constraint in bst.constraints:
-#     data, mono = constraint.transform(X[[constraint.name]])
-#     xs.append(data)
-#     monos += mono
-
-# # create list of number of cols produced for each feature
-# lens: List[int] = [x.shape[1] for x in xs]
-
-# clf.get_params() == bst.xgb.get_params()
 
 
-# # from sklearn.tree import DecisionTreeRegressor, export_graphviz
+# # # bst.predict(data)
+# # # bst.predict_log_proba(data)
+# # yhat = bst.decision_function(data, columns=True)
 
-# # clf = DecisionTreeRegressor(max_leaf_nodes=8)
-# # clf.fit(age.reshape(-1, 1), y)
 
-# # tree = copy.deepcopy(clf.tree_)
+# # # ## does grid search work?
+# # from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
-# # ## which indices are the leaves
-# # leaves = [i for i, t in enumerate(tree.threshold) if t == -2]
+# # parameters = {
+# #     'min_child_weight': [5, 10, 25, 50, 100],
+# #     'max_leaf_nodes': [5, 10, 25, 50, 100],
 
-# # # left splits/right splits
-# # ls = [i for i, x in enumerate(tree.children_left) if x in leaves]
-# # rs = [i for i, x in enumerate(tree.children_right) if x in leaves]
+# #     }
 
-# # res = [(tree.threshold[i], float(tree.value[l])) for i, l in zip(ls + rs, leaves)]
-# # srt = sorted(res, key=lambda x: x[0])
+# # # bst = BoostCardClassifier(constraints="config.json", n_estimators=500)
 
-# # ## need to record if left or right split as well
+# # # bst.fit(data, y, eval_metric='auc', verbose=True)
+# # clf = GridSearchCV(bst, parameters, cv=10)
 
-# # ## TODO: figure this shit out tomorrow!
+# # from scipy.stats import randint as sp_randint
+# # from scipy.stats import uniform
+# # parameters = {
+# #     'min_child_weight': sp_randint(5, 100),
+# #     'max_leaf_nodes': sp_randint(2, 10),
+# #     }
 
-# # ## go down tree and keep track of max/min thresh of each level
-# # ## output max/min/value at each leaf
 
-# # pd.Series(clf.predict(age.reshape(-1, 1))).value_counts()
+# # clf = RandomizedSearchCV(bst, parameters, n_iter=50, cv=5)
+# # clf.fit(data, y, eval_metric='auc', verbose=True)
 
-# # import graphviz
+# # yhat = clf.best_estimator_.decision_function(data, columns=True)
 
-# # dot_data = export_graphviz(clf)
-# # graph = graphviz.Source(dot_data)
+# # sns.scatterplot(x=df['Age'], y=yhat['Age'])
+# # sns.scatterplot(x=df['Sex'], y=yhat['Sex'])
+# # sns.scatterplot(x=df['Pclass'], y=yhat['Pclass'])
+# # sns.scatterplot(x=df['Fare'], y=yhat['Fare'])
+# # sns.scatterplot(x=df['SibSp'], y=yhat['SibSp'])
 
-# # graph.render()
+# # # #sns.scatterplot(x=df['Age'], y=yhat[:,0])
+# # # sns.scatterplot(x=df['Fare'], y=yhat[:,1])
 
-# # # clf.predict(age.reshape(-1, 1))
+# # # d1 = clf.get_params()
+# # # d2 = bst.xgb.get_params()
+# # # for k, v in d1.items():
+# # #     print(f"{k}: match: {d1[k] == d2[k]}")
 
-## debug nump warning
-# from numpy.
+
+# # # clf.get_params() == bst.xgb.get_params()
+
+
+# # # ## TROUBLE SHOOT
+
+# # # X = df
+
+# # # xs: List[np.ndarray] = []
+# # # monos: List[int] = []
+# # # for constraint in bst.constraints:
+# # #     data, mono = constraint.transform(X[[constraint.name]])
+# # #     xs.append(data)
+# # #     monos += mono
+
+# # # # create list of number of cols produced for each feature
+# # # lens: List[int] = [x.shape[1] for x in xs]
+
+# # # clf.get_params() == bst.xgb.get_params()
+
+
+# # # # from sklearn.tree import DecisionTreeRegressor, export_graphviz
+
+# # # # clf = DecisionTreeRegressor(max_leaf_nodes=8)
+# # # # clf.fit(age.reshape(-1, 1), y)
+
+# # # # tree = copy.deepcopy(clf.tree_)
+
+# # # # ## which indices are the leaves
+# # # # leaves = [i for i, t in enumerate(tree.threshold) if t == -2]
+
+# # # # # left splits/right splits
+# # # # ls = [i for i, x in enumerate(tree.children_left) if x in leaves]
+# # # # rs = [i for i, x in enumerate(tree.children_right) if x in leaves]
+
+# # # # res = [(tree.threshold[i], float(tree.value[l])) for i, l in zip(ls + rs, leaves)]
+# # # # srt = sorted(res, key=lambda x: x[0])
+
+# # # # ## need to record if left or right split as well
+
+# # # # ## TODO: figure this shit out tomorrow!
+
+# # # # ## go down tree and keep track of max/min thresh of each level
+# # # # ## output max/min/value at each leaf
+
+# # # # pd.Series(clf.predict(age.reshape(-1, 1))).value_counts()
+
+# # # # import graphviz
+
+# # # # dot_data = export_graphviz(clf)
+# # # # graph = graphviz.Source(dot_data)
+
+# # # # graph.render()
+
+# # # # # clf.predict(age.reshape(-1, 1))
+
+# # ## debug nump warning
+# # # from numpy.
